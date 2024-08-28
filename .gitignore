@@ -1,0 +1,9 @@
+.cache
+.deps
+obj
+dll/glide2x.dll.so
+dll/*.o
+resources
+compile_commands.json
+libglide2x.so
+glide2x.dll
