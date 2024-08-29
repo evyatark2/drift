@@ -21,7 +21,7 @@ void staging_pipeline_set_color_write_enable(bool enable);
 void staging_pipeline_set_alpha_write_enable(bool enable);
 bool staging_pipeline_changed(void);
 struct PipelineConfig *staging_pipeline_get(void);
-void staging_pipeline_reset(void);
+void staging_pipeline_force_change(void);
 
 struct PipelineConfig;
 

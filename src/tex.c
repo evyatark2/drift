@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 #include "mesh.h"
 #include "common.h"
@@ -29,6 +30,8 @@ struct {
     size_t len;
     struct TransferNode *nodes;
 } CB_RING;
+
+static struct TransferNode *get_cb();
 
 static int texture_node_key_cmp(struct TextureNodeKey *t1, struct TextureNodeKey *t2);
 
@@ -83,35 +86,6 @@ FX_ENTRY void FX_CALL grTexSource(GrChipID_t tmu, FxU32 start_address, FxU32 eve
 {
     LOG(LEVEL_TRACE, "Called on %d:0x%x\n", tmu, start_address);
 
-    VkCommandBuffer cb = VK_NULL_HANDLE;
-    VkFence fence = VK_NULL_HANDLE;
-
-    if (CB_RING.len > 0 && vkWaitForFences(DEVICE, 1, &CB_RING.nodes[CB_RING.start].fence, VK_FALSE, 0) == VK_SUCCESS) {
-        cb = CB_RING.nodes[CB_RING.start].cb;
-        fence = CB_RING.nodes[CB_RING.start].fence;
-        vkDestroyBuffer(DEVICE, CB_RING.nodes[CB_RING.start].buf, NULL);
-        vkFreeMemory(DEVICE, CB_RING.nodes[CB_RING.start].mem, NULL);
-    }
-
-    if (cb == VK_NULL_HANDLE) {
-        for (size_t i = 0; i < CB_RING.len; i++) {
-            if (vkWaitForFences(DEVICE, 1, &CB_RING.nodes[i].fence, VK_FALSE, 0) == VK_TIMEOUT) {
-                break;
-            }
-
-            cb = CB_RING.nodes[i].cb;
-            fence = CB_RING.nodes[i].fence;
-            vkDestroyBuffer(DEVICE, CB_RING.nodes[i].buf, NULL);
-            vkFreeMemory(DEVICE, CB_RING.nodes[i].mem, NULL);
-        }
-    }
-
-    if (cb == VK_NULL_HANDLE) {
-        CB_RING.nodes = realloc(CB_RING.nodes, CB_RING.capacity * 2 * sizeof(struct TransferNode));
-        assert(CB_RING.nodes != NULL);
-        CB_RING.capacity *= 2;
-    }
-
     if (SHOULD_RESET[tmu]) {
         texture_avl_free(&TEXTURES[tmu]);
         SHOULD_RESET[tmu] = false;
@@ -149,6 +123,8 @@ FX_ENTRY void FX_CALL grTexSource(GrChipID_t tmu, FxU32 start_address, FxU32 eve
     struct TextureNode *node = texture_avl_get(&TEXTURES[tmu], &key);
 
     if (node == NULL) {
+        struct TransferNode *tnode = get_cb();
+
         LOG(LEVEL_DEBUG, "Creating texutre\n");
 
         node = texture_avl_insert(&TEXTURES[tmu], &key);
@@ -221,6 +197,7 @@ FX_ENTRY void FX_CALL grTexSource(GrChipID_t tmu, FxU32 start_address, FxU32 eve
             .pInheritanceInfo = NULL,
         };
 
+        VkCommandBuffer cb = tnode->cb;
         vkBeginCommandBuffer(cb, &begin_info);
 
         VkImageMemoryBarrier barrier = {
@@ -292,7 +269,7 @@ FX_ENTRY void FX_CALL grTexSource(GrChipID_t tmu, FxU32 start_address, FxU32 eve
             .signalSemaphoreCount = 0,
             //.pSignalSemaphores    = ,
         };
-        CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, fence));
+        CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, tnode->fence));
     }
 
     staging_mesh_set_view(tmu, node->view);
@@ -359,11 +336,11 @@ FX_ENTRY void FX_CALL grTexDownloadMipMap(GrChipID_t tmu, FxU32 start_address, F
         //.pQueueFamilyIndices   = ,
     };
 
-    VkBuffer staging;
-    vkCreateBuffer(DEVICE, &create_info, NULL, &staging);
+    struct TransferNode *node = get_cb();
+    vkCreateBuffer(DEVICE, &create_info, NULL, &node->buf);
 
     VkMemoryRequirements reqs;
-    vkGetBufferMemoryRequirements(DEVICE, staging, &reqs);
+    vkGetBufferMemoryRequirements(DEVICE, node->buf, &reqs);
 
     VkPhysicalDeviceMemoryProperties props;
     vkGetPhysicalDeviceMemoryProperties(PHYSICAL_DEVICE, &props);
@@ -381,16 +358,14 @@ FX_ENTRY void FX_CALL grTexDownloadMipMap(GrChipID_t tmu, FxU32 start_address, F
         .allocationSize  = reqs.size,
         .memoryTypeIndex = i,
     };
+    vkAllocateMemory(DEVICE, &allocate_info, NULL, &node->mem);
 
-    VkDeviceMemory memory;
-    vkAllocateMemory(DEVICE, &allocate_info, NULL, &memory);
-
-    vkBindBufferMemory(DEVICE, staging, memory, 0);
+    vkBindBufferMemory(DEVICE, node->buf, node->mem, 0);
 
     void* mapped;
-    CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, memory, 0, size, 0, &mapped));
+    CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, node->mem, 0, size, 0, &mapped));
     memcpy(mapped, info->data, size);
-    vkUnmapMemory(DEVICE, memory);
+    vkUnmapMemory(DEVICE, node->mem);
 
     const VkCommandBufferBeginInfo begin_info = {
         .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -399,6 +374,7 @@ FX_ENTRY void FX_CALL grTexDownloadMipMap(GrChipID_t tmu, FxU32 start_address, F
         .pInheritanceInfo = NULL,
     };
 
+    VkCommandBuffer cb = node->cb;
     vkBeginCommandBuffer(cb, &begin_info);
 
     VkBufferMemoryBarrier barrier = {
@@ -419,7 +395,7 @@ FX_ENTRY void FX_CALL grTexDownloadMipMap(GrChipID_t tmu, FxU32 start_address, F
         .dstOffset = start_address,
         .size = size,
     };
-    vkCmdCopyBuffer(cb, staging, TEXTURE_BUFFER[tmu], 1, &region);
+    vkCmdCopyBuffer(cb, node->buf, TEXTURE_BUFFER[tmu], 1, &region);
 
     // Prepare the texture for a transfer to an image
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -439,9 +415,7 @@ FX_ENTRY void FX_CALL grTexDownloadMipMap(GrChipID_t tmu, FxU32 start_address, F
         .signalSemaphoreCount = 0,
         //.pSignalSemaphores    = ,
     };
-    CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, fence));
-    vkDestroyBuffer(DEVICE, staging, NULL);
-    vkFreeMemory(DEVICE, memory, NULL);
+    CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, node->fence));
 
     SHOULD_RESET[tmu] = true;
     staging_mesh_set_view(tmu, VK_NULL_HANDLE);
@@ -505,11 +479,29 @@ int textures_init()
         CHECK_VULKAN_RESULT(vkBindBufferMemory(DEVICE, TEXTURE_BUFFER[tmu], TEXTURE_MEMORY[tmu], 0));
     }
 
-    CB_RING.cb = malloc(sizeof(VkCommandBuffer));
-    assert(CB_RING.cb != NULL);
+    CB_RING.nodes = malloc(sizeof(struct TransferNode));
+    assert(CB_RING.nodes != NULL);
 
-    CB_RING.fence = malloc(sizeof(VkFence));
-    assert(CB_RING.fence != NULL);
+    {
+        VkCommandBufferAllocateInfo allocate_info = {
+            .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .pNext              = NULL,
+            .commandPool        = POOL,
+            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
+        vkAllocateCommandBuffers(DEVICE, &allocate_info, &CB_RING.nodes[0].cb);
+
+        VkFenceCreateInfo create_info = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+        };
+        vkCreateFence(DEVICE, &create_info, NULL, &CB_RING.nodes[0].fence);
+
+        CB_RING.nodes[0].buf = VK_NULL_HANDLE;
+        CB_RING.nodes[0].mem = VK_NULL_HANDLE;
+    }
 
     CB_RING.capacity = 1;
     CB_RING.start = 0;
@@ -518,9 +510,21 @@ int textures_init()
     return 0;
 }
 
-void texture_memory_termiate(void)
+void textures_terminate(void)
 {
+    VkCommandBuffer cbs[CB_RING.capacity];
+    for (size_t i = 0; i < CB_RING.capacity; i++) {
+        vkDestroyBuffer(DEVICE, CB_RING.nodes[i].buf, NULL);
+        vkFreeMemory(DEVICE, CB_RING.nodes[i].mem, NULL);
+        vkDestroyFence(DEVICE, CB_RING.nodes[i].fence, NULL);
+        cbs[i] = CB_RING.nodes[i].cb;
+    }
+
+    vkFreeCommandBuffers(DEVICE, POOL, CB_RING.capacity, cbs);
+    free(CB_RING.nodes);
+
     for (size_t tmu = 0; tmu < GLIDE_NUM_TMU; tmu++) {
+        texture_avl_free(&TEXTURES[tmu]);
         vkDestroyBuffer(DEVICE, TEXTURE_BUFFER[tmu], NULL);
         vkFreeMemory(DEVICE, TEXTURE_MEMORY[tmu], NULL);
     }
@@ -570,6 +574,62 @@ static int32_t get_aligned_tex_memory(FxU32 even_odd, const GrTexInfo* info)
     sum = sum + (7 - (sum - 1) % 8);
 
     return sum;
+}
+
+static struct TransferNode *get_cb()
+{
+    struct TransferNode *node = NULL;
+
+    VkResult res;
+    while (CB_RING.len > 0 && (res = vkWaitForFences(DEVICE, 1, &CB_RING.nodes[CB_RING.start].fence, VK_FALSE, 0)) == VK_SUCCESS) {
+        LOG(LEVEL_DEBUG, "Found available fence at index %d\n", CB_RING.start);
+        node = &CB_RING.nodes[CB_RING.start];
+        vkDestroyBuffer(DEVICE, node->buf, NULL);
+        node->buf = VK_NULL_HANDLE;
+        vkFreeMemory(DEVICE, node->mem, NULL);
+        node->mem = VK_NULL_HANDLE;
+        vkResetFences(DEVICE, 1, &node->fence);
+        CB_RING.start++;
+        CB_RING.start %= CB_RING.capacity;
+        CB_RING.len--;
+    }
+
+    if (node == NULL || res == VK_TIMEOUT) {
+        if (CB_RING.len == CB_RING.capacity) {
+            CB_RING.nodes = realloc(CB_RING.nodes, CB_RING.capacity * 2 * sizeof(struct TransferNode));
+            assert(CB_RING.nodes != NULL);
+            LOG(LEVEL_DEBUG, "Allocated ring with size %d\n", CB_RING.capacity);
+
+            VkCommandBuffer cbs[CB_RING.capacity];
+            VkCommandBufferAllocateInfo allocate_info = {
+                .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                .pNext              = NULL,
+                .commandPool        = POOL,
+                .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                .commandBufferCount = CB_RING.capacity,
+            };
+            vkAllocateCommandBuffers(DEVICE, &allocate_info, cbs);
+
+            VkFenceCreateInfo create_info = {
+                .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+                .pNext = NULL,
+                .flags = 0,
+            };
+            for (size_t i = CB_RING.capacity; i < CB_RING.capacity * 2; i++) {
+                vkCreateFence(DEVICE, &create_info, NULL, &CB_RING.nodes[i].fence);
+                CB_RING.nodes[i].cb = cbs[i - CB_RING.capacity];
+                CB_RING.nodes[i].buf = VK_NULL_HANDLE;
+                CB_RING.nodes[i].mem = VK_NULL_HANDLE;
+            }
+
+            CB_RING.capacity *= 2;
+        }
+
+        node = &CB_RING.nodes[(CB_RING.start + CB_RING.len) % CB_RING.capacity];
+    }
+
+    CB_RING.len++;
+    return node;
 }
 
 static int texture_node_key_cmp(struct TextureNodeKey *t1, struct TextureNodeKey *t2)

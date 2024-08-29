@@ -185,7 +185,7 @@ struct MeshInfo *staging_mesh_get(void)
     return &STAGING_MESH.current;
 }
 
-void staging_mesh_reset(void)
+void staging_mesh_force_change(void)
 {
     STAGING_MESH.count++;
 }

@@ -44,7 +44,7 @@ FX_ENTRY void FX_CALL grBufferClear(GrColor_t color, GrAlpha_t alpha, FxU16 dept
 
     // Reset vertex buffer and the mesh cache
     pipeline_array_reset(PIPELINES);
-    staging_pipeline_reset();
+    staging_pipeline_force_change();
     staging_fog_table_reset();
     frame_reset(frames_get_current());
 }
@@ -81,7 +81,7 @@ FX_ENTRY FxBool FX_CALL grLfbLock(GrLock_t type, GrBuffer_t buffer, GrLfbWriteMo
 
     // Reset the frame's resources
     pipeline_array_reset(PIPELINES);
-    staging_pipeline_reset();
+    staging_pipeline_force_change();
     staging_fog_table_reset();
     frame_reset(frames_get_current());
 

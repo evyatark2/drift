@@ -161,7 +161,7 @@ static const VkPipelineMultisampleStateCreateInfo MULTISAMPLE_STATE = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
     .pNext = NULL,
     .flags = 0,
-    .rasterizationSamples = VK_SAMPLE_COUNT_4_BIT,
+    .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
     .sampleShadingEnable = VK_FALSE,
     .minSampleShading = 0.0f,
     .pSampleMask = NULL,
@@ -330,15 +330,15 @@ struct PipelineConfig *staging_pipeline_get(void)
     return &STAGING_PIPELINE.current;
 }
 
-void staging_pipeline_reset(void)
+void staging_pipeline_force_change(void)
 {
-    // This is a trick to get the next staging_pipeline_changed() return true
+    // This is a trick to get the next call to staging_pipeline_changed() return true
     // We could copy sp->next to sp->current and set sp->count to 1 but that would be a lot slower
     // If we would have just set this to 1 and not copy sp->next to sp->current, consider the following
-    // grDepthMask(DISABLE) // Changes the pipeline from WBUFFER (current is WBUFFER, next is DISABLE); increases sp->count
+    // grDepthMask(DISABLE) // Changes the pipeline from WBUFFER (current is WBUFFER, next is DISABLE); increases sp->count to 1
     // ~No draw calls happen here~
     // grBufferSwap() // Would have set sp->count to 1
-    // grDepthMask(WBUFFER) // Changes the pipeline back to WBUFFER; decreases sp->count (since current is still WBUFFER)
+    // grDepthMask(WBUFFER) // Changes the pipeline back to WBUFFER; decreases sp->count to 0 (since current is still WBUFFER)
     // grDrawTriangle() // Pipeline should be recreated at this point since this is a brand new frame but it won't since sp->count is 0
     STAGING_PIPELINE.count++;
 }

@@ -50,7 +50,7 @@ void texture_avl_free(struct TextureAVL *avl);
 extern struct TextureAVL TEXTURES[GLIDE_NUM_TMU];
 
 int textures_init(void);
-void texture_memory_termiate(void);
+void textures_terminate(void);
 
 #endif
 

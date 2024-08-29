@@ -455,14 +455,12 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
         frame->pipelines = malloc(pipeline_array_size(pa) * sizeof(struct Pipeline *));
         assert(frame->pipelines != NULL);
 
-        struct PipelineConfig **configs = malloc(pipeline_array_size(pa) * sizeof(struct PipelineConfig *));
-        assert(configs != NULL);
+        struct PipelineConfig *configs[pipeline_array_size(pa)];
 
         pipeline_array_get_all(pa, configs);
 
         for (size_t i = 0; i < pipeline_array_size(pa); i++)
             frame->pipelines[i] = pipeline_get_for_config(configs[i], FRAMES.pipelineLayout);
-        free(configs);
 
         frame->pipelineCount = pipeline_array_size(pa);
 
@@ -495,12 +493,12 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
                 .offset = { 0, 0 },
                 .extent = SWAPCHAIN_EXTENT,
             },
-            .clearValueCount = 3,
+            .clearValueCount = 2,
             .pClearValues = (VkClearValue[]) {
                 [0] = {
                     .color = CLEAR_COLOR_VALUE,
                 },
-                [2] = {
+                [1] = {
                     .depthStencil = CLEAR_DEPTH_VALUE
                 }
             },
@@ -926,7 +924,7 @@ void frames_advance()
     CHECK_VULKAN_RESULT(vkAcquireNextImageKHR(FRAMES.device, SWAPCHAIN, UINT64_MAX, frame->imageAcquiredSemaphore, VK_NULL_HANDLE, &CURRENT_BACKBUFFER));
 
     pipeline_array_reset(PIPELINES);
-    staging_pipeline_reset();
+    staging_pipeline_force_change();
 
     staging_fog_table_reset();
     frame->fogTableCount = 0;
