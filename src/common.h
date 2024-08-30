@@ -29,6 +29,8 @@ enum LogLevel {
         } \
     } while(0)
 
+#define LOG_CALL() LOG(LEVEL_TRACE, "Called\n")
+
 static inline const char *strlevel(enum LogLevel level)
 {
     switch (level) {

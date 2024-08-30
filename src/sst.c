@@ -79,7 +79,7 @@ static void *load_file(const char *name, size_t *size);
 
 FX_ENTRY FxBool FX_CALL grSstQueryBoards(GrHwConfiguration *hwconfig)
 {
-    LOG(LEVEL_TRACE, "Called\n");
+    LOG_CALL();
     //uint32_t count;
     //vkEnumeratePhysicalDevices(INSTANCE, &count, NULL);
     hwconfig->num_sst = 1;
@@ -88,7 +88,7 @@ FX_ENTRY FxBool FX_CALL grSstQueryBoards(GrHwConfiguration *hwconfig)
 
 FX_ENTRY FxBool FX_CALL grSstQueryHardware(GrHwConfiguration *hwconfig)
 {
-    LOG(LEVEL_TRACE, "Called\n");
+    LOG_CALL();
     hwconfig->num_sst = 1;
     hwconfig->SSTs[0].type = GR_SSTTYPE_VOODOO;
     hwconfig->SSTs[0].sstBoard.Voodoo2Config.fbRam = 4;
@@ -526,7 +526,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
 
 FX_ENTRY void FX_CALL grSstWinClose(void)
 {
-    LOG(LEVEL_DEBUG, "Called\n");
+    LOG_CALL();
     vkDeviceWaitIdle(DEVICE);
     textures_terminate();
     vkDestroyPipeline(DEVICE, WIREFRAME_PIPELINE, NULL);
@@ -572,24 +572,24 @@ FX_ENTRY void FX_CALL grSstSelect(int which_sst)
 
 FX_ENTRY void FX_CALL grSstIdle()
 {
-    LOG(LEVEL_TRACE, "Called\n");
+    LOG_CALL();
     //vkDeviceWaitIdle(DEVICE);
 }
 
 FX_ENTRY FxBool FX_CALL grSstVRetraceOn()
 {
-    LOG(LEVEL_TRACE, "Called\n");
+    LOG_CALL();
     return 1;
 }
 
 FX_ENTRY void FX_CALL grSstPerfStats(GrSstPerfStats_t* pStats)
 {
-    LOG(LEVEL_TRACE, "Called\n");
+    LOG_CALL();
 }
 
 FX_ENTRY void FX_CALL grSstResetPerfStats(void)
 {
-    LOG(LEVEL_TRACE, "Called\n");
+    LOG_CALL();
 }
 
 static void *load_file(const char *name, size_t *size)
