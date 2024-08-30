@@ -310,6 +310,26 @@ void frame_skip(struct Frame *frame)
             barrier[0].oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             barrier[0].newLayout     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
             vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, barrier);
+        } else {
+            VkImageMemoryBarrier barrier = {
+                .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .pNext               = NULL,
+                .srcAccessMask       = 0,
+                .dstAccessMask       = 0,
+                .oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout           = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image               = SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER],
+                .subresourceRange    = {
+                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel   = 0,
+                    .levelCount     = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount     = 1,
+                },
+            };
+            vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
         }
 
         CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->cb));
@@ -319,7 +339,7 @@ void frame_skip(struct Frame *frame)
             .pNext                = NULL,
             .waitSemaphoreCount   = 1,
             .pWaitSemaphores      = &frame->imageAcquiredSemaphore,
-            .pWaitDstStageMask    = (VkPipelineStageFlags[]) { VK_PIPELINE_STAGE_TRANSFER_BIT },
+            .pWaitDstStageMask    = (VkPipelineStageFlags[]) { CURRENT_FRONTBUFFER != CURRENT_BACKBUFFER ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT },
             .commandBufferCount   = 1,
             .pCommandBuffers      = &frame->cb,
             .signalSemaphoreCount = 1,
@@ -333,7 +353,7 @@ void frame_skip(struct Frame *frame)
 
     frame_present(frame);
 
-    CHECK_VULKAN_RESULT(vkWaitForFences(FRAMES.device, 1, &frame->fence, VK_TRUE, UINT64_MAX));
+    CHECK_VULKAN_RESULT(vkWaitForFences(DEVICE, 1, &frame->fence, VK_TRUE, UINT64_MAX));
 
     CURRENT_FRONTBUFFER = CURRENT_BACKBUFFER;
     CHECK_VULKAN_RESULT(vkAcquireNextImageKHR(FRAMES.device, SWAPCHAIN, UINT64_MAX, frame->imageAcquiredSemaphore, VK_NULL_HANDLE, &CURRENT_BACKBUFFER));
@@ -814,6 +834,7 @@ int frames_init(VkPhysicalDevice physical_device, VkDevice device, size_t width,
     FRAMES.device = device;
     FRAMES.current = 0;
     CHECK_VULKAN_RESULT(vkAcquireNextImageKHR(DEVICE, SWAPCHAIN, UINT64_MAX, FRAMES.frames[0].imageAcquiredSemaphore, VK_NULL_HANDLE, &CURRENT_BACKBUFFER));
+    CURRENT_FRONTBUFFER = CURRENT_BACKBUFFER;
 
     return 0;
 }
