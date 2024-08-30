@@ -149,7 +149,7 @@ FX_ENTRY void FX_CALL grGlideInit()
     {
         uint32_t count;
         vkGetPhysicalDeviceQueueFamilyProperties(PHYSICAL_DEVICE, &count, NULL);
-        VkQueueFamilyProperties *props = malloc(count * sizeof(VkQueueFamilyProperties));
+        VkQueueFamilyProperties props[count];
         assert(props != NULL);
         vkGetPhysicalDeviceQueueFamilyProperties(PHYSICAL_DEVICE, &count, props);
         for (uint32_t i = 0; i < count; i++) {
@@ -158,8 +158,6 @@ FX_ENTRY void FX_CALL grGlideInit()
                 break;
             }
         }
-
-        free(props);
     }
 
     {
@@ -172,7 +170,7 @@ FX_ENTRY void FX_CALL grGlideInit()
             .pQueuePriorities = (float[]) { 1.0f },
         };
 
-        const char *const exts[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME };
+        const char *const exts[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME, VK_EXT_ROBUSTNESS_2_EXTENSION_NAME };
 
         VkPhysicalDeviceRobustness2FeaturesEXT robustness = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT,
@@ -185,12 +183,7 @@ FX_ENTRY void FX_CALL grGlideInit()
         VkPhysicalDeviceUniformBufferStandardLayoutFeaturesKHR uniform_standard_layout = {
             .sType                       = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES_KHR,
             .pNext                       = &robustness,
-            //.pNext                       = NULL,
             .uniformBufferStandardLayout = VK_TRUE,
-        };
-
-        VkPhysicalDeviceFeatures features = {
-            .fillModeNonSolid = VK_TRUE,
         };
 
         const VkDeviceCreateInfo create_info = {
@@ -203,7 +196,7 @@ FX_ENTRY void FX_CALL grGlideInit()
             //.ppEnabledLayerNames     = ,
             .enabledExtensionCount   = sizeof(exts) / sizeof(exts[0]),
             .ppEnabledExtensionNames = exts,
-            .pEnabledFeatures        = &features,
+            .pEnabledFeatures        = NULL,
         };
 
         CHECK_VULKAN_RESULT(vkCreateDevice(PHYSICAL_DEVICE, &create_info, NULL, &DEVICE));
