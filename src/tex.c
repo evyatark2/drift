@@ -582,7 +582,6 @@ static struct TransferNode *get_cb()
 
     VkResult res;
     while (CB_RING.len > 0 && (res = vkWaitForFences(DEVICE, 1, &CB_RING.nodes[CB_RING.start].fence, VK_FALSE, 0)) == VK_SUCCESS) {
-        LOG(LEVEL_DEBUG, "Found available fence at index %d\n", CB_RING.start);
         node = &CB_RING.nodes[CB_RING.start];
         vkDestroyBuffer(DEVICE, node->buf, NULL);
         node->buf = VK_NULL_HANDLE;
@@ -598,7 +597,8 @@ static struct TransferNode *get_cb()
         if (CB_RING.len == CB_RING.capacity) {
             CB_RING.nodes = realloc(CB_RING.nodes, CB_RING.capacity * 2 * sizeof(struct TransferNode));
             assert(CB_RING.nodes != NULL);
-            LOG(LEVEL_DEBUG, "Allocated ring with size %d\n", CB_RING.capacity);
+
+            memcpy(&CB_RING.nodes[CB_RING.capacity], CB_RING.nodes, CB_RING.start * sizeof(struct TransferNode));
 
             VkCommandBuffer cbs[CB_RING.capacity];
             VkCommandBufferAllocateInfo allocate_info = {
@@ -615,9 +615,10 @@ static struct TransferNode *get_cb()
                 .pNext = NULL,
                 .flags = 0,
             };
-            for (size_t i = CB_RING.capacity; i < CB_RING.capacity * 2; i++) {
+            for (size_t i_ = 0; i_ < CB_RING.capacity; i_++) {
+                size_t i = (CB_RING.start + CB_RING.len + i_) % (CB_RING.capacity * 2);
                 vkCreateFence(DEVICE, &create_info, NULL, &CB_RING.nodes[i].fence);
-                CB_RING.nodes[i].cb = cbs[i - CB_RING.capacity];
+                CB_RING.nodes[i].cb = cbs[i_];
                 CB_RING.nodes[i].buf = VK_NULL_HANDLE;
                 CB_RING.nodes[i].mem = VK_NULL_HANDLE;
             }
@@ -626,6 +627,8 @@ static struct TransferNode *get_cb()
         }
 
         node = &CB_RING.nodes[(CB_RING.start + CB_RING.len) % CB_RING.capacity];
+    } else {
+        node = &CB_RING.nodes[CB_RING.start];
     }
 
     CB_RING.len++;
