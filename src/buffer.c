@@ -100,7 +100,6 @@ FX_ENTRY FxBool FX_CALL grLfbUnlock(GrLock_t type, GrBuffer_t buffer)
     frame_unlock(frames_get_current());
 
     if (IS_WRITING[buffer]) {
-        frame_copy(frames_get_current());
         SKIP_RENDER = true;
     }
 

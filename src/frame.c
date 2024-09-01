@@ -17,6 +17,7 @@ struct Frame {
     VkCommandBuffer cb;
     VkSemaphore imageAcquiredSemaphore;
     VkSemaphore renderFinishedSemaphore;
+    VkFence transferFence;
     VkFence fence;
     size_t pipelineCount;
     struct Pipeline **pipelines;
@@ -26,6 +27,8 @@ struct Frame {
 
     size_t vertexCapacity;
     size_t vertexCount;
+    VkBuffer stagingVertexBuffer;
+    VkDeviceMemory stagingVertexBufferMemory;
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
     struct DrVertex *vertexBufferData;
@@ -139,185 +142,30 @@ void frame_unlock(struct Frame *frame)
     vkUnmapMemory(DEVICE, frame->stagingFrameMemory);
 }
 
-void frame_copy(struct Frame *frame)
-{
-    LOG(LEVEL_TRACE, "Called\n");
-    CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->cb, 0));
-
-    const VkCommandBufferBeginInfo begin_info = {
-        .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .pNext            = NULL,
-        .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        .pInheritanceInfo = NULL,
-    };
-
-    CHECK_VULKAN_RESULT(vkBeginCommandBuffer(frame->cb, &begin_info));
-
-    VkImageMemoryBarrier barrier = {
-        .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext               = NULL,
-        .srcAccessMask       = VK_ACCESS_HOST_WRITE_BIT,
-        .dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT,
-        .oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image               = frame->stagingFrame,
-        .subresourceRange    = {
-            .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel   = 0,
-            .levelCount     = 1,
-            .baseArrayLayer = 0,
-            .layerCount     = 1,
-        },
-    };
-    vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &barrier);
-
-    barrier.srcAccessMask = 0;
-    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.image = SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER];
-    vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &barrier);
-
-    const VkImageBlit blit = {
-        .srcSubresource = {
-            .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel       = 0,
-            .baseArrayLayer = 0,
-            .layerCount     = 1,
-        },
-        .srcOffsets     = {
-            { 0, 0, 0 },
-            { RESOLUTION.width, RESOLUTION.height, 1 }
-
-        },
-        .dstSubresource = {
-            .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel       = 0,
-            .baseArrayLayer = 0,
-            .layerCount     = 1,
-        },
-        .dstOffsets     = {
-            { 0, 0, 0 },
-            { SWAPCHAIN_EXTENT.width, SWAPCHAIN_EXTENT.height, 1 }
-        },
-    };
-
-    vkCmdBlitImage(frame->cb, frame->stagingFrame, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
-
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = 0;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &barrier);
-
-    CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->cb));
-
-    const VkSubmitInfo submit_info = {
-        .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext                = NULL,
-        .waitSemaphoreCount   = 1,
-        .pWaitSemaphores      = &frame->imageAcquiredSemaphore,
-        .pWaitDstStageMask    = (VkPipelineStageFlags[]) { VK_PIPELINE_STAGE_TRANSFER_BIT },
-        .commandBufferCount   = 1,
-        .pCommandBuffers      = &frame->cb,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores    = &frame->renderFinishedSemaphore,
-    };
-
-    CHECK_VULKAN_RESULT(vkResetFences(DEVICE, 1, &frame->fence));
-    CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, frame->fence));
-}
-
 void frame_skip(struct Frame *frame)
 {
     LOG(LEVEL_TRACE, "Called\n");
 
-    if (!SKIP_RENDER) {
-        const VkCommandBufferBeginInfo begin_info = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .pNext = NULL,
-            .flags = 0,
-            .pInheritanceInfo = NULL,
-        };
-        CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->cb, 0));
-        CHECK_VULKAN_RESULT(vkBeginCommandBuffer(frame->cb, &begin_info));
+    CHECK_VULKAN_RESULT(vkWaitForFences(DEVICE, 1, &frame->fence, VK_TRUE, UINT64_MAX));
+    CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->cb, 0));
 
-        if (CURRENT_BACKBUFFER != CURRENT_FRONTBUFFER) {
-            VkImageMemoryBarrier barrier[] = {
-                {
-                    .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                    .pNext               = NULL,
-                    .srcAccessMask       = 0,
-                    .dstAccessMask       = 0,
-                    .oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED,
-                    .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                    .image               = SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER],
-                    .subresourceRange    = {
-                        .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                        .baseMipLevel   = 0,
-                        .levelCount     = 1,
-                        .baseArrayLayer = 0,
-                        .layerCount     = 1,
-                    },
-                },
-                {
-                    .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                    .pNext               = NULL,
-                    .srcAccessMask       = 0,
-                    .dstAccessMask       = 0,
-                    .oldLayout           = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                    .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                    .image               = SWAPCHAIN_IMAGES[CURRENT_FRONTBUFFER],
-                    .subresourceRange    = {
-                        .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                        .baseMipLevel   = 0,
-                        .levelCount     = 1,
-                        .baseArrayLayer = 0,
-                        .layerCount     = 1,
-                    },
-                }
-            };
-            vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 2, barrier);
+    const VkCommandBufferBeginInfo begin_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .pInheritanceInfo = NULL,
+    };
+    CHECK_VULKAN_RESULT(vkBeginCommandBuffer(frame->cb, &begin_info));
 
-            VkImageCopy copy = {
-                .srcSubresource = {
-                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .mipLevel       = 0,
-                    .baseArrayLayer = 0,
-                    .layerCount     = 1,
-                },
-                .srcOffset      = { 0, 0, 0 },
-                .dstSubresource = {
-                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .mipLevel       = 0,
-                    .baseArrayLayer = 0,
-                    .layerCount     = 1,
-                },
-                .dstOffset      = { 0, 0, 0 },
-                .extent         = { SWAPCHAIN_EXTENT.width, SWAPCHAIN_EXTENT.height, 1 },
-            };
-
-            vkCmdCopyImage(frame->cb, SWAPCHAIN_IMAGES[CURRENT_FRONTBUFFER], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-
-            barrier[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            barrier[0].dstAccessMask = 0;
-            barrier[0].oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier[0].newLayout     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-            vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, barrier);
-        } else {
-            VkImageMemoryBarrier barrier = {
+    if (CURRENT_BACKBUFFER != CURRENT_FRONTBUFFER) {
+        VkImageMemoryBarrier barrier[] = {
+            {
                 .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                 .pNext               = NULL,
                 .srcAccessMask       = 0,
                 .dstAccessMask       = 0,
                 .oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED,
-                .newLayout           = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .image               = SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER],
@@ -328,52 +176,117 @@ void frame_skip(struct Frame *frame)
                     .baseArrayLayer = 0,
                     .layerCount     = 1,
                 },
-            };
-            vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
-        }
-
-        CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->cb));
-
-        VkSubmitInfo submit_info = {
-            .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .pNext                = NULL,
-            .waitSemaphoreCount   = 1,
-            .pWaitSemaphores      = &frame->imageAcquiredSemaphore,
-            .pWaitDstStageMask    = (VkPipelineStageFlags[]) { CURRENT_FRONTBUFFER != CURRENT_BACKBUFFER ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT },
-            .commandBufferCount   = 1,
-            .pCommandBuffers      = &frame->cb,
-            .signalSemaphoreCount = 1,
-            .pSignalSemaphores    = &frame->renderFinishedSemaphore,
+            },
+            {
+                .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .pNext               = NULL,
+                .srcAccessMask       = 0,
+                .dstAccessMask       = 0,
+                .oldLayout           = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image               = SWAPCHAIN_IMAGES[CURRENT_FRONTBUFFER],
+                .subresourceRange    = {
+                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel   = 0,
+                    .levelCount     = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount     = 1,
+                },
+            }
         };
-        CHECK_VULKAN_RESULT(vkResetFences(DEVICE, 1, &frame->fence));
-        CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, frame->fence));
+        vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 2, barrier);
+
+        VkImageCopy copy = {
+            .srcSubresource = {
+                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel       = 0,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+            .srcOffset      = { 0, 0, 0 },
+            .dstSubresource = {
+                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel       = 0,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+            .dstOffset      = { 0, 0, 0 },
+            .extent         = { SWAPCHAIN_EXTENT.width, SWAPCHAIN_EXTENT.height, 1 },
+        };
+
+        vkCmdCopyImage(frame->cb, SWAPCHAIN_IMAGES[CURRENT_FRONTBUFFER], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+
+        barrier[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier[0].dstAccessMask = 0;
+        barrier[0].oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier[0].newLayout     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, barrier);
     } else {
-        SKIP_RENDER = false;
+        VkImageMemoryBarrier barrier = {
+            .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext               = NULL,
+            .srcAccessMask       = 0,
+            .dstAccessMask       = 0,
+            .oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout           = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image               = SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER],
+            .subresourceRange    = {
+                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel   = 0,
+                .levelCount     = 1,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+        };
+        vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
     }
+
+    CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->cb));
+
+    VkSubmitInfo submit_info = {
+        .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext                = NULL,
+        .waitSemaphoreCount   = 1,
+        .pWaitSemaphores      = &frame->imageAcquiredSemaphore,
+        .pWaitDstStageMask    = (VkPipelineStageFlags[]) { CURRENT_FRONTBUFFER != CURRENT_BACKBUFFER ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT },
+        .commandBufferCount   = 1,
+        .pCommandBuffers      = &frame->cb,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores    = &frame->renderFinishedSemaphore,
+    };
+    CHECK_VULKAN_RESULT(vkResetFences(DEVICE, 1, &frame->fence));
+    CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, frame->fence));
 
     frame_present(frame);
 
-    CHECK_VULKAN_RESULT(vkWaitForFences(DEVICE, 1, &frame->fence, VK_TRUE, UINT64_MAX));
 
     CURRENT_FRONTBUFFER = CURRENT_BACKBUFFER;
+
+    CHECK_VULKAN_RESULT(vkWaitForFences(DEVICE, 1, &frame->fence, VK_TRUE, UINT64_MAX));
     CHECK_VULKAN_RESULT(vkAcquireNextImageKHR(FRAMES.device, SWAPCHAIN, UINT64_MAX, frame->imageAcquiredSemaphore, VK_NULL_HANDLE, &CURRENT_BACKBUFFER));
 }
 
 void frame_render(struct Frame *frame, struct PipelineArray *pa)
 {
     LOG(LEVEL_TRACE, "Called\n");
-    vkUnmapMemory(DEVICE, frame->vertexBufferMemory);
+    vkUnmapMemory(DEVICE, frame->stagingVertexBufferMemory);
 
     if (pipeline_array_mesh_count(pa) == 0) {
         if (!SKIP_RENDER) {
             LOG(LEVEL_DEBUG, "Noop\n");
+            CHECK_VULKAN_RESULT(vkWaitForFences(DEVICE, 1, &frame->fence, VK_TRUE, UINT64_MAX));
+            CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->cb, 0));
+
             const VkCommandBufferBeginInfo begin_info = {
                 .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                 .pNext = NULL,
                 .flags = 0,
                 .pInheritanceInfo = NULL,
             };
-            CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->cb, 0));
             CHECK_VULKAN_RESULT(vkBeginCommandBuffer(frame->cb, &begin_info));
 
             VkImageMemoryBarrier barrier = {
@@ -413,7 +326,107 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
             CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, frame->fence));
 
         } else {
-            LOG(LEVEL_DEBUG, "Skipping render\n");
+            CHECK_VULKAN_RESULT(vkWaitForFences(DEVICE, 1, &frame->fence, VK_FALSE, UINT64_MAX));
+            CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->cb, 0));
+
+            const VkCommandBufferBeginInfo begin_info = {
+                .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                .pNext            = NULL,
+                .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                .pInheritanceInfo = NULL,
+            };
+
+            CHECK_VULKAN_RESULT(vkBeginCommandBuffer(frame->cb, &begin_info));
+
+            VkImageMemoryBarrier barriers[2] = {
+                {
+                    .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                    .pNext               = NULL,
+                    .srcAccessMask       = VK_ACCESS_HOST_WRITE_BIT,
+                    .dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT,
+                    .oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .image               = frame->stagingFrame,
+                    .subresourceRange    = {
+                        .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .baseMipLevel   = 0,
+                        .levelCount     = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount     = 1,
+                    },
+                },
+                {
+                    .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                    .pNext               = NULL,
+                    .srcAccessMask       = 0,
+                    .dstAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT,
+                    .oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .image               = SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER],
+                    .subresourceRange    = {
+                        .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .baseMipLevel   = 0,
+                        .levelCount     = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount     = 1,
+                    },
+                }
+            };
+            vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 2, barriers);
+
+            const VkImageBlit blit = {
+                .srcSubresource = {
+                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel       = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount     = 1,
+                },
+                .srcOffsets     = {
+                    { 0, 0, 0 },
+                    { RESOLUTION.width, RESOLUTION.height, 1 }
+
+                },
+                .dstSubresource = {
+                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel       = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount     = 1,
+                },
+                .dstOffsets     = {
+                    { 0, 0, 0 },
+                    { SWAPCHAIN_EXTENT.width, SWAPCHAIN_EXTENT.height, 1 }
+                },
+            };
+
+            vkCmdBlitImage(frame->cb, frame->stagingFrame, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+
+            barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barriers[1].dstAccessMask = 0;
+            barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barriers[1].newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0, NULL, 0, NULL, 1, &barriers[1]);
+
+            CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->cb));
+
+            const VkSubmitInfo submit_info = {
+                .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .pNext                = NULL,
+                .waitSemaphoreCount   = 1,
+                .pWaitSemaphores      = &frame->imageAcquiredSemaphore,
+                .pWaitDstStageMask    = (VkPipelineStageFlags[]) { VK_PIPELINE_STAGE_TRANSFER_BIT },
+                .commandBufferCount   = 1,
+                .pCommandBuffers      = &frame->cb,
+                .signalSemaphoreCount = 1,
+                .pSignalSemaphores    = &frame->renderFinishedSemaphore,
+            };
+
+            CHECK_VULKAN_RESULT(vkResetFences(DEVICE, 1, &frame->fence));
+            CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, frame->fence));
+
             SKIP_RENDER = false;
         }
     } else {
@@ -780,7 +793,8 @@ int frames_init(VkPhysicalDevice physical_device, VkDevice device, size_t width,
         CHECK_VULKAN_RESULT(vkCreateSemaphore(device, &semaphore_info, NULL, &frame->imageAcquiredSemaphore));
         CHECK_VULKAN_RESULT(vkCreateSemaphore(device, &semaphore_info, NULL, &frame->renderFinishedSemaphore));
 
-        vk_create_buffer_and_memory(physical_device, device, 4096 * sizeof(struct DrVertex), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame->vertexBuffer, &frame->vertexBufferMemory);
+        vk_create_buffer_and_memory(physical_device, device, 4096 * sizeof(struct DrVertex), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame->stagingVertexBuffer, &frame->stagingVertexBufferMemory);
+        vk_create_buffer_and_memory(physical_device, device, 4096 * sizeof(struct DrVertex), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->vertexBuffer, &frame->vertexBufferMemory);
         frame->vertexCapacity = 4096;
 
         vk_create_buffer_and_memory(physical_device, device, sizeof(struct FogTable), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame->fogTableBuffer, &frame->fogTableBufferMemory);

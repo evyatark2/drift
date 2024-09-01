@@ -21,7 +21,6 @@ void frame_reset(struct Frame *frame);
 void frame_present(struct Frame *frame);
 void frame_lock(struct Frame *frame, void **ptr);
 void frame_unlock(struct Frame *frame);
-void frame_copy(struct Frame *frame);
 void frame_skip(struct Frame *frame);
 void frame_render(struct Frame *frame, struct PipelineArray *pa);
 void frame_add_vertices(struct Frame *frame, struct DrVertex *v1, struct DrVertex *v2, struct DrVertex *v3);
