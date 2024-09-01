@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 #include "buffer.h"
 #include "common.h"
@@ -15,6 +16,7 @@ typedef float mat4[4][4];
 
 struct Frame {
     VkCommandBuffer cb;
+    VkCommandBuffer transferCb;
     VkSemaphore imageAcquiredSemaphore;
     VkSemaphore renderFinishedSemaphore;
     VkFence transferFence;
@@ -29,6 +31,7 @@ struct Frame {
     size_t vertexCount;
     VkBuffer stagingVertexBuffer;
     VkDeviceMemory stagingVertexBufferMemory;
+    size_t vertexBufferVertexCapacity;
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
     struct DrVertex *vertexBufferData;
@@ -508,7 +511,20 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
         free(writes);
         free(image_infos);
 
-        CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->cb, 0));
+        CHECK_VULKAN_RESULT(vkWaitForFences(DEVICE, 1, &frame->fence, VK_FALSE, UINT64_MAX));
+
+        if (frame->vertexCount > frame->vertexBufferVertexCapacity) {
+            VkBuffer buf;
+            VkDeviceMemory mem;
+            vk_create_buffer_and_memory(PHYSICAL_DEVICE, DEVICE, frame->vertexCount * sizeof(struct DrVertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &buf, &mem);
+            vkDestroyBuffer(DEVICE, frame->vertexBuffer, NULL);
+            vkFreeMemory(DEVICE, frame->vertexBufferMemory, NULL);
+            frame->vertexBuffer = buf;
+            frame->vertexBufferMemory = mem;
+            frame->vertexBufferVertexCapacity = frame->vertexCount;
+        }
+
+        CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->transferCb, 0));
 
         const VkCommandBufferBeginInfo begin_info = {
             .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -516,6 +532,45 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
             .flags            = 0,
             .pInheritanceInfo = NULL,
         };
+        CHECK_VULKAN_RESULT(vkBeginCommandBuffer(frame->transferCb, &begin_info));
+        VkBufferCopy copy = {
+            .srcOffset = 0,
+            .dstOffset = 0,
+            .size      = frame->vertexCount * sizeof(struct DrVertex),
+        };
+        vkCmdCopyBuffer(frame->transferCb, frame->stagingVertexBuffer, frame->vertexBuffer, 1, &copy);
+
+        VkBufferMemoryBarrier barrier = {
+            .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .pNext               = NULL,
+            .srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask       = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer              = frame->vertexBuffer,
+            .offset              = 0,
+            .size                = VK_WHOLE_SIZE,
+        };
+        vkCmdPipelineBarrier(frame->transferCb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, NULL, 1, &barrier, 0, NULL);
+
+        CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->transferCb));
+
+        VkSubmitInfo submit_info = {
+            .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext                = NULL,
+            .waitSemaphoreCount   = 0,
+            //.pWaitSemaphores      = ,
+            //.pWaitDstStageMask    = ,
+            .commandBufferCount   = 1,
+            .pCommandBuffers      = &frame->transferCb,
+            .signalSemaphoreCount = 0,
+            //.pSignalSemaphores    = ,
+        };
+        CHECK_VULKAN_RESULT(vkResetFences(DEVICE, 1, &frame->transferFence));
+        CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, frame->transferFence));
+
+        CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->cb, 0));
+
         CHECK_VULKAN_RESULT(vkBeginCommandBuffer(frame->cb, &begin_info));
 
         const VkRenderPassBeginInfo render_pass_begin_info = {
@@ -555,17 +610,13 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
         vkCmdEndRenderPass(frame->cb);
         CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->cb));
 
-        VkSubmitInfo submit_info = {
-            .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .pNext                = NULL,
-            .waitSemaphoreCount   = 1,
-            .pWaitSemaphores      = &frame->imageAcquiredSemaphore,
-            .pWaitDstStageMask    = (VkPipelineStageFlags[]) { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT },
-            .commandBufferCount   = 1,
-            .pCommandBuffers      = &frame->cb,
-            .signalSemaphoreCount = 1,
-            .pSignalSemaphores    = &frame->renderFinishedSemaphore,
-        };
+        submit_info.waitSemaphoreCount   = 1;
+        submit_info.pWaitSemaphores      = &frame->imageAcquiredSemaphore;
+        submit_info.pWaitDstStageMask    = (VkPipelineStageFlags[]) { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        submit_info.commandBufferCount   = 1;
+        submit_info.pCommandBuffers      = &frame->cb;
+        submit_info.signalSemaphoreCount = 1;
+        submit_info.pSignalSemaphores    = &frame->renderFinishedSemaphore;
         CHECK_VULKAN_RESULT(vkResetFences(DEVICE, 1, &frame->fence));
         CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, frame->fence));
     }
@@ -574,7 +625,7 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
 void frame_add_vertices(struct Frame *frame, struct DrVertex *v1, struct DrVertex *v2, struct DrVertex *v3)
 {
     if (frame->vertexCount + 3 > frame->vertexCapacity) {
-        vkUnmapMemory(DEVICE, frame->vertexBufferMemory);
+        vkUnmapMemory(DEVICE, frame->stagingVertexBufferMemory);
 
         VkBuffer buf;
         VkDeviceMemory mem;
@@ -583,7 +634,7 @@ void frame_add_vertices(struct Frame *frame, struct DrVertex *v1, struct DrVerte
             .pNext                 = NULL,
             .flags                 = 0,
             .size                  = (frame->vertexCapacity + 4096) * sizeof(struct DrVertex),
-            .usage                 = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            .usage                 = VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
             .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
             //.queueFamilyIndexCount = ,
             //.pQueueFamilyIndices   = ,
@@ -613,24 +664,22 @@ void frame_add_vertices(struct Frame *frame, struct DrVertex *v1, struct DrVerte
         CHECK_VULKAN_RESULT(vkAllocateMemory(DEVICE, &allocate_info, NULL, &mem));
         CHECK_VULKAN_RESULT(vkBindBufferMemory(DEVICE, buf, mem, 0));
 
-        if (frame->vertexBufferMemory != VK_NULL_HANDLE) {
-            void *new;
-            CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, mem, 0, frame->vertexCount * sizeof(struct DrVertex), 0, &new));
-            void *old;
-            CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, frame->vertexBufferMemory, 0, frame->vertexCount * sizeof(struct DrVertex), 0, &old));
-            memcpy(new, old, frame->vertexCount * sizeof(struct DrVertex));
-            vkUnmapMemory(DEVICE, frame->vertexBufferMemory);
-            vkUnmapMemory(DEVICE, mem);
-        }
+        void *new;
+        CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, mem, 0, frame->vertexCount * sizeof(struct DrVertex), 0, &new));
+        void *old;
+        CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, frame->stagingVertexBufferMemory, 0, frame->vertexCount * sizeof(struct DrVertex), 0, &old));
+        memcpy(new, old, frame->vertexCount * sizeof(struct DrVertex));
+        vkUnmapMemory(DEVICE, frame->stagingVertexBufferMemory);
+        vkUnmapMemory(DEVICE, mem);
 
-        vkDestroyBuffer(DEVICE, frame->vertexBuffer, NULL);
-        vkFreeMemory(DEVICE, frame->vertexBufferMemory, NULL);
-        frame->vertexBuffer         = buf;
-        frame->vertexBufferMemory   = mem;
+        vkDestroyBuffer(DEVICE, frame->stagingVertexBuffer, NULL);
+        vkFreeMemory(DEVICE, frame->stagingVertexBufferMemory, NULL);
+        frame->stagingVertexBuffer         = buf;
+        frame->stagingVertexBufferMemory   = mem;
         frame->vertexCapacity += 4096;
 
         void *mapped;
-        CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, frame->vertexBufferMemory, 0, frame->vertexCapacity * sizeof(struct DrVertex),0, &mapped));
+        CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, frame->stagingVertexBufferMemory, 0, frame->vertexCapacity * sizeof(struct DrVertex),0, &mapped));
         frame->vertexBufferData = mapped;
     }
 
@@ -650,10 +699,10 @@ int frames_init(VkPhysicalDevice physical_device, VkDevice device, size_t width,
         .pNext = NULL,
         .commandPool = POOL,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = MAX_CONCURRENT_FRAMES,
+        .commandBufferCount = MAX_CONCURRENT_FRAMES * 2,
     };
 
-    VkCommandBuffer cbs[MAX_CONCURRENT_FRAMES];
+    VkCommandBuffer cbs[MAX_CONCURRENT_FRAMES*2];
     CHECK_VULKAN_RESULT(vkAllocateCommandBuffers(device, &allocate_info, cbs));
 
     const VkFenceCreateInfo fence_info = {
@@ -786,16 +835,21 @@ int frames_init(VkPhysicalDevice physical_device, VkDevice device, size_t width,
     }
     for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
         struct Frame *frame = FRAMES.frames + i;
-        frame->cb = cbs[i];
+        frame->cb = cbs[i*2];
+        frame->transferCb = cbs[i*2+1];
 
         CHECK_VULKAN_RESULT(vkCreateFence(device, &fence_info, NULL, &frame->fence));
+        CHECK_VULKAN_RESULT(vkCreateFence(device, &fence_info, NULL, &frame->transferFence));
 
         CHECK_VULKAN_RESULT(vkCreateSemaphore(device, &semaphore_info, NULL, &frame->imageAcquiredSemaphore));
         CHECK_VULKAN_RESULT(vkCreateSemaphore(device, &semaphore_info, NULL, &frame->renderFinishedSemaphore));
 
         vk_create_buffer_and_memory(physical_device, device, 4096 * sizeof(struct DrVertex), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame->stagingVertexBuffer, &frame->stagingVertexBufferMemory);
-        vk_create_buffer_and_memory(physical_device, device, 4096 * sizeof(struct DrVertex), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->vertexBuffer, &frame->vertexBufferMemory);
+        //vk_create_buffer_and_memory(physical_device, device, 4096 * sizeof(struct DrVertex), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &frame->vertexBuffer, &frame->vertexBufferMemory);
         frame->vertexCapacity = 4096;
+        frame->vertexBufferVertexCapacity = 0;
+        frame->vertexBuffer = VK_NULL_HANDLE;
+        frame->vertexBufferMemory = VK_NULL_HANDLE;
 
         vk_create_buffer_and_memory(physical_device, device, sizeof(struct FogTable), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame->fogTableBuffer, &frame->fogTableBufferMemory);
         frame->fogTableVertexCounts = malloc(sizeof(uint32_t));
@@ -842,7 +896,7 @@ int frames_init(VkPhysicalDevice physical_device, VkDevice device, size_t width,
     }
 
     void *mapped;
-    CHECK_VULKAN_RESULT(vkMapMemory(device, FRAMES.frames[0].vertexBufferMemory, 0, FRAMES.frames[0].vertexCapacity * sizeof(struct DrVertex),0, &mapped));
+    CHECK_VULKAN_RESULT(vkMapMemory(device, FRAMES.frames[0].stagingVertexBufferMemory, 0, FRAMES.frames[0].vertexCapacity * sizeof(struct DrVertex),0, &mapped));
     FRAMES.frames[0].vertexBufferData = mapped;
 
     FRAMES.physicalDevice = physical_device;
@@ -916,9 +970,12 @@ void frames_terminate(void)
 {
     for (size_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
         struct Frame *frame = FRAMES.frames + i;
+        vkDestroyFence(FRAMES.device, frame->transferFence, NULL);
         vkDestroyFence(FRAMES.device, frame->fence, NULL);
         vkDestroyBuffer(FRAMES.device, frame->vertexBuffer, NULL);
         vkFreeMemory(FRAMES.device, frame->vertexBufferMemory, NULL);
+        vkDestroyBuffer(FRAMES.device, frame->stagingVertexBuffer, NULL);
+        vkFreeMemory(FRAMES.device, frame->stagingVertexBufferMemory, NULL);
         free(frame->pipelines);
 
         vkDestroyImage(FRAMES.device, frame->stagingFrame, NULL);
@@ -955,7 +1012,7 @@ void frames_advance()
     struct Frame *frame = FRAMES.frames + FRAMES.current;
 
     CURRENT_FRONTBUFFER = CURRENT_BACKBUFFER;
-    CHECK_VULKAN_RESULT(vkWaitForFences(FRAMES.device, 1, &frame->fence, VK_TRUE, UINT64_MAX));
+    CHECK_VULKAN_RESULT(vkWaitForFences(FRAMES.device, 1, &frame->transferFence, VK_TRUE, UINT64_MAX));
 
     CHECK_VULKAN_RESULT(vkAcquireNextImageKHR(FRAMES.device, SWAPCHAIN, UINT64_MAX, frame->imageAcquiredSemaphore, VK_NULL_HANDLE, &CURRENT_BACKBUFFER));
 
@@ -968,7 +1025,7 @@ void frames_advance()
     frame->vertexCount = 0;
 
     void *mapped;
-    CHECK_VULKAN_RESULT(vkMapMemory(FRAMES.device, frame->vertexBufferMemory, 0, frame->vertexCapacity * sizeof(struct DrVertex), 0, &mapped));
+    CHECK_VULKAN_RESULT(vkMapMemory(FRAMES.device, frame->stagingVertexBufferMemory, 0, frame->vertexCapacity * sizeof(struct DrVertex), 0, &mapped));
     frame->vertexBufferData = mapped;
 
     free(frame->sets);
