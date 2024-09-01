@@ -19,7 +19,7 @@ struct FogTable {
 void staging_fog_table_set(const uint8_t *data); 
 bool staging_fog_table_changed(void);
 struct FogTable *staging_fog_table_get(void);
-void staging_fog_table_reset(void);
+void staging_fog_table_force_change(void);
 
 //extern bool FOG_TABLE_CHANGED;
 //extern struct FogTable NEXT_TABLE;

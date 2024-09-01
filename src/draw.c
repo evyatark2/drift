@@ -28,8 +28,8 @@ FX_ENTRY void FX_CALL grDrawTriangle(const GrVertex *v1, const GrVertex *v2, con
             assert(0);
     }
 
-    struct PipelineInfo *pi = pipeline_array_get_last(PIPELINES);
     if (staging_mesh_changed()) {
+        struct PipelineInfo *pi = pipeline_array_get_last(PIPELINES);
         if (pipeline_info_add_mesh(pi, staging_mesh_get()) == -1)
             assert(0);
         //struct Mesh *mesh = pipeline_info_get_mesh(pi);

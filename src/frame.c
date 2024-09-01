@@ -467,11 +467,7 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
             free(layouts);
         }
 
-        for (size_t i = 0; i < frame->pipelineCount; i++) {
-            pipeline_unref(frame->pipelines[i]);
-        }
-        free(frame->pipelines);
-
+        struct Pipeline **pipelines = frame->pipelines;
         frame->pipelines = malloc(pipeline_array_size(pa) * sizeof(struct Pipeline *));
         assert(frame->pipelines != NULL);
 
@@ -481,6 +477,11 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
 
         for (size_t i = 0; i < pipeline_array_size(pa); i++)
             frame->pipelines[i] = pipeline_get_for_config(configs[i], FRAMES.pipelineLayout);
+
+        for (size_t i = 0; i < frame->pipelineCount; i++) {
+            pipeline_unref(pipelines[i]);
+        }
+        free(pipelines);
 
         frame->pipelineCount = pipeline_array_size(pa);
 
@@ -947,7 +948,7 @@ void frames_advance()
     pipeline_array_reset(PIPELINES);
     staging_pipeline_force_change();
 
-    staging_fog_table_reset();
+    staging_fog_table_force_change();
     frame->fogTableCount = 0;
 
     frame->vertexCount = 0;

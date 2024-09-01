@@ -1,7 +1,6 @@
 #include "fx.h"
 
 #include <string.h>
-#include <math.h>
 
 #include "glide.h"
 #include "common.h"
@@ -92,7 +91,7 @@ struct FogTable *staging_fog_table_get(void)
     return &STAGING_FOG_TABLE.next;
 }
 
-void staging_fog_table_reset(void)
+void staging_fog_table_force_change(void)
 {
     STAGING_FOG_TABLE.chagned = true;
 }
