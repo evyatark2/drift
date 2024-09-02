@@ -25,6 +25,8 @@ extern VkImage DEPTH_IMAGE;
 extern VkImageView DEPTH_IMAGE_VIEW;
 extern VkRenderPass RENDER_PASS;
 extern VkRenderPass CLEARING_RENDER_PASS;
+extern VkImage LAST_FRAME;
+extern VkImage LAST_FRAME_MEMORY;
 extern VkFramebuffer *FRAMEBUFFERS;
 
 #endif

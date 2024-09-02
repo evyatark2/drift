@@ -35,11 +35,10 @@ VkImageView *SWAPCHAIN_IMAGE_VIEWS;
 VkImage DEPTH_IMAGE;
 VkDeviceMemory DEPTH_IMAGE_MEMORY;
 VkImageView DEPTH_IMAGE_VIEW;
-VkImage RENDER_TARGET;
-VkDeviceMemory RENDER_TARGET_MEMORY;
-VkImageView *RENDER_TARGET_VIEWS;
 VkRenderPass RENDER_PASS;
 VkRenderPass CLEARING_RENDER_PASS;
+VkImage LAST_FRAME;
+VkImage LAST_FRAME_MEMORY;
 VkFramebuffer *FRAMEBUFFERS;
 
 #define DEFINE_RESOLUTION(w, h) [GR_RESOLUTION_##w##x##h] = { w, h }
@@ -246,80 +245,6 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
 
     }
 
-    // Resolve images
-    {
-        RENDER_TARGET_VIEWS = malloc(SWAPCHAIN_IMAGE_COUNT * sizeof(VkImageView));
-        assert(RENDER_TARGET_VIEWS != NULL);
-
-        VkImageCreateInfo create_info = {
-            .sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-            .pNext                 = NULL,
-            .flags                 = 0,
-            .imageType             = VK_IMAGE_TYPE_2D,
-            .format                = format.format,
-            .extent                = { SWAPCHAIN_EXTENT.width, SWAPCHAIN_EXTENT.height, 1 },
-            .mipLevels             = 1,
-            .arrayLayers           = SWAPCHAIN_IMAGE_COUNT,
-            .samples               = VK_SAMPLE_COUNT_1_BIT,
-            .tiling                = VK_IMAGE_TILING_OPTIMAL,
-            .usage                 = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-            .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
-            //.queueFamilyIndexCount = ,
-            //.pQueueFamilyIndices   = ,
-            .initialLayout         = VK_IMAGE_LAYOUT_UNDEFINED,
-        };
-
-        CHECK_VULKAN_RESULT(vkCreateImage(DEVICE, &create_info, NULL, &RENDER_TARGET));
-        VkMemoryRequirements reqs;
-        vkGetImageMemoryRequirements(DEVICE, RENDER_TARGET, &reqs);
-
-        VkPhysicalDeviceMemoryProperties props;
-        vkGetPhysicalDeviceMemoryProperties(PHYSICAL_DEVICE, &props);
-
-        uint32_t i;
-        for (i = 0; i < props.memoryTypeCount; i++) {
-            if ((reqs.memoryTypeBits & (1 << i)) && (props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-                break;
-            }
-        }
-
-        VkMemoryAllocateInfo allocate_info = {
-            .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            .pNext           = NULL,
-            .allocationSize  = reqs.size,
-            .memoryTypeIndex = i,
-        };
-        CHECK_VULKAN_RESULT(vkAllocateMemory(DEVICE, &allocate_info, NULL, &RENDER_TARGET_MEMORY));
-        CHECK_VULKAN_RESULT(vkBindImageMemory(DEVICE, RENDER_TARGET, RENDER_TARGET_MEMORY, 0));
-
-        VkImageViewCreateInfo view_info = {
-            .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .pNext            = NULL,
-            .flags            = 0,
-            .image            = RENDER_TARGET,
-            .viewType         = VK_IMAGE_VIEW_TYPE_2D,
-            .format           = format.format,
-            .components       = {
-                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .a = VK_COMPONENT_SWIZZLE_IDENTITY,
-            },
-            .subresourceRange = {
-                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                //.baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-        };
-
-        for (uint32_t i = 0; i < SWAPCHAIN_IMAGE_COUNT; i++) {
-            view_info.subresourceRange.baseArrayLayer = i;
-            vkCreateImageView(DEVICE, &view_info, NULL, &RENDER_TARGET_VIEWS[i]);
-        }
-    }
-
     // Depth image
     {
         const VkImageCreateInfo create_info = {
@@ -400,7 +325,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                 .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                 .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                .finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                .finalLayout    = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             },
             {
                 .flags          = 0,
@@ -435,7 +360,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                     .pPreserveAttachments    = NULL,
                 }
             },
-            .dependencyCount = 1,
+            .dependencyCount = 3,
             .pDependencies   = (VkSubpassDependency[]) {
                 {
                     .srcSubpass      = VK_SUBPASS_EXTERNAL,
@@ -445,6 +370,24 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                     .srcAccessMask   = 0,
                     .dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                     .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+                },
+                {
+                    .srcSubpass      = 0,
+                    .dstSubpass      = VK_SUBPASS_EXTERNAL,
+                    .srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    .dstStageMask    = VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    .srcAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    .dstAccessMask   = VK_ACCESS_TRANSFER_READ_BIT,
+                    .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+                },
+                {
+                    .srcSubpass      = VK_SUBPASS_EXTERNAL,
+                    .dstSubpass      = 0,
+                    .srcStageMask    = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                    .dstStageMask    = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                    .srcAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                    .dstAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                    .dependencyFlags = 0,
                 }
             },
         };
@@ -516,6 +459,50 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
         VIEWPORT_STATE.pScissors = &SCISSOR;
     }
 
+    {
+        VkImageCreateInfo create_info = {
+            .sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .pNext                 = NULL,
+            .flags                 = 0,
+            .imageType             = VK_IMAGE_TYPE_2D,
+            .format                = format.format,
+            .extent                = { SWAPCHAIN_EXTENT.width, SWAPCHAIN_EXTENT.height, 1 },
+            .mipLevels             = 1,
+            .arrayLayers           = 1,
+            .samples               = VK_SAMPLE_COUNT_1_BIT,
+            .tiling                = VK_IMAGE_TILING_OPTIMAL,
+            .usage                 = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
+            //.queueFamilyIndexCount = ,
+            //.pQueueFamilyIndices   = ,
+            .initialLayout         = VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        CHECK_VULKAN_RESULT(vkCreateImage(DEVICE, &create_info, NULL, &LAST_FRAME));
+
+        VkMemoryRequirements requirements;
+        vkGetImageMemoryRequirements(DEVICE, DEPTH_IMAGE, &requirements);
+
+        VkPhysicalDeviceMemoryProperties props;
+        vkGetPhysicalDeviceMemoryProperties(PHYSICAL_DEVICE, &props);
+
+        uint32_t index = 0;
+        for (uint32_t i = 0; i < props.memoryTypeCount; i++) {
+            if ((requirements.memoryTypeBits & (1 << i)) && (props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+                index = i;
+                break;
+            }
+        }
+
+        VkMemoryAllocateInfo allocate_info = {
+            .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext           = NULL,
+            .allocationSize  = requirements.size,
+            .memoryTypeIndex = index,
+        };
+        CHECK_VULKAN_RESULT(vkAllocateMemory(DEVICE, &allocate_info, NULL, &LAST_FRAME_MEMORY));
+        CHECK_VULKAN_RESULT(vkBindImageMemory(DEVICE, LAST_FRAME, LAST_FRAME_MEMORY, 0));
+    }
+
     frames_init(PHYSICAL_DEVICE, DEVICE, RESOLUTION.width, RESOLUTION.height);
     pipeline_array_init(PIPELINES);
     textures_init();
@@ -535,12 +522,8 @@ FX_ENTRY void FX_CALL grSstWinClose(void)
     }
     for (uint32_t i = 0; i < SWAPCHAIN_IMAGE_COUNT; i++) {
         vkDestroyImageView(DEVICE, SWAPCHAIN_IMAGE_VIEWS[i], NULL);
-        vkDestroyImageView(DEVICE, RENDER_TARGET_VIEWS[i], NULL);
     }
-    vkDestroyImage(DEVICE, RENDER_TARGET, NULL);
-    vkFreeMemory(DEVICE, RENDER_TARGET_MEMORY, NULL);
     free(SWAPCHAIN_IMAGE_VIEWS);
-    free(RENDER_TARGET_VIEWS);
     frames_terminate();
     for (size_t i = 0; i < GLIDE_NUM_TMU; i++) {
         texture_avl_free(&TEXTURES[i]);
@@ -548,6 +531,8 @@ FX_ENTRY void FX_CALL grSstWinClose(void)
     vkDestroyImageView(DEVICE, DEPTH_IMAGE_VIEW, NULL);
     vkDestroyImage(DEVICE, DEPTH_IMAGE, NULL);
     vkFreeMemory(DEVICE, DEPTH_IMAGE_MEMORY, NULL);
+    vkDestroyImage(DEVICE, LAST_FRAME, NULL);
+    vkFreeMemory(DEVICE, LAST_FRAME_MEMORY, NULL);
     vkDestroyRenderPass(DEVICE, CLEARING_RENDER_PASS, NULL);
     vkDestroyRenderPass(DEVICE, RENDER_PASS, NULL);
     vkDestroyShaderModule(DEVICE, SHADER_INFO[0].module, NULL);

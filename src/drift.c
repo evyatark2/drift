@@ -110,9 +110,21 @@ FX_ENTRY void FX_CALL grGlideInit()
         .pUserData       = NULL,
     };
 
+    const VkLayerSettingEXT layer_settings[] = {
+        { "VK_LAYER_KHRONOS_validation", "validate_core", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &(VkBool32) { VK_TRUE } },
+        { "VK_LAYER_KHRONOS_validation", "validate_sync", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &(VkBool32) { VK_TRUE } },
+    };
+
+    const VkLayerSettingsCreateInfoEXT layer_settings_create_info = {
+        .sType        = VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT,
+        .pNext        = &messenger_info,
+        .settingCount = sizeof(layer_settings) / sizeof(layer_settings[0]),
+        .pSettings    = layer_settings,
+    };
+
     const VkInstanceCreateInfo create_info = {
         .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pNext                   = &messenger_info,
+        .pNext                   = &layer_settings_create_info,
         //.pNext                   = NULL,
         .flags                   = 0,
         .pApplicationInfo        = &app_info,

@@ -10,7 +10,6 @@
 #include "pipeline.h"
 #include "frame.h"
 
-uint32_t CURRENT_FRONTBUFFER;
 uint32_t CURRENT_BACKBUFFER;
 uint32_t CURRENT_AUXBUFFER;
 

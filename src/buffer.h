@@ -8,7 +8,6 @@
 
 extern bool IS_WRITING[3];
 
-extern uint32_t CURRENT_FRONTBUFFER;
 extern uint32_t CURRENT_BACKBUFFER;
 extern uint32_t CURRENT_AUXBUFFER;
 
