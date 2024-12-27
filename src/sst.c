@@ -266,7 +266,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
             .arrayLayers           = SWAPCHAIN_IMAGE_COUNT,
             .samples               = VK_SAMPLE_COUNT_4_BIT,
             .tiling                = VK_IMAGE_TILING_OPTIMAL,
-            .usage                 = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+            .usage                 = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
             .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
             //.queueFamilyIndexCount = ,
             //.pQueueFamilyIndices   = ,
