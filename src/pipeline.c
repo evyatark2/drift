@@ -157,7 +157,7 @@ VkPipelineViewportStateCreateInfo VIEWPORT_STATE = {
     .pScissors     = NULL,
 };
 
-static const VkPipelineMultisampleStateCreateInfo MULTISAMPLE_STATE = {
+static VkPipelineMultisampleStateCreateInfo MULTISAMPLE_STATE = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
     .pNext = NULL,
     .flags = 0,
@@ -304,6 +304,10 @@ int pipeline_array_init(struct PipelineArray *pa)
     pa->infos = malloc(sizeof(struct PipelineInfo));
     if (pa->infos == NULL) {
         return -1;
+    }
+
+    if (DRIFT_CONFIG.force_aa) {
+      MULTISAMPLE_STATE.rasterizationSamples = VK_SAMPLE_COUNT_4_BIT;
     }
 
     pa->capacity = 1;

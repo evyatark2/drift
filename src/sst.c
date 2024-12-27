@@ -35,6 +35,9 @@ VkImageView *SWAPCHAIN_IMAGE_VIEWS;
 VkImage DEPTH_IMAGE;
 VkDeviceMemory DEPTH_IMAGE_MEMORY;
 VkImageView DEPTH_IMAGE_VIEW;
+VkImage RENDER_TARGET;
+VkDeviceMemory RENDER_TARGET_MEMORY;
+VkImageView *RENDER_TARGET_VIEWS;
 VkRenderPass RENDER_PASS;
 VkRenderPass CLEARING_RENDER_PASS;
 VkImage LAST_FRAME;
@@ -107,7 +110,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(Display *dpy, Window win, GrScreenResolutio
 FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_resolution, GrScreenRefresh_t refresh_rate, GrColorFormat_t color_format, GrOriginLocation_t origin, int color_buffer_count, int aux_buffer_count)
 #endif
 {
-    LOG(LEVEL_DEBUG, "resolution: %d, refresh_rate: %d, format: %d, origin: %d, color_buffer_count: %d, aux_buffer_count: %d\n", screen_resolution, refresh_rate, color_format, origin, color_buffer_count, aux_buffer_count);
+    LOG(LEVEL_DEBUG, "resolution: %d (%dx%d), refresh_rate: %d, format: %d, origin: %d, color_buffer_count: %d, aux_buffer_count: %d\n", screen_resolution, RES_TABLE[screen_resolution].width, RES_TABLE[screen_resolution].height, refresh_rate, color_format, origin, color_buffer_count, aux_buffer_count);
 
     assert((color_buffer_count == 2 && aux_buffer_count == 1) || (color_buffer_count == 3 && aux_buffer_count == 0));
 
@@ -245,7 +248,80 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
             create_info.image = SWAPCHAIN_IMAGES[i];
             CHECK_VULKAN_RESULT(vkCreateImageView(DEVICE, &create_info, NULL, SWAPCHAIN_IMAGE_VIEWS + i));
         }
+    }
 
+    // Resolve images
+    if (DRIFT_CONFIG.force_aa) {
+        RENDER_TARGET_VIEWS = malloc(SWAPCHAIN_IMAGE_COUNT * sizeof(VkImageView));
+        assert(RENDER_TARGET_VIEWS != NULL);
+        
+        VkImageCreateInfo create_info = {
+            .sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .pNext                 = NULL,
+            .flags                 = 0,
+            .imageType             = VK_IMAGE_TYPE_2D,
+            .format                = format.format,
+            .extent                = { SWAPCHAIN_EXTENT.width, SWAPCHAIN_EXTENT.height, 1 },
+            .mipLevels             = 1,
+            .arrayLayers           = SWAPCHAIN_IMAGE_COUNT,
+            .samples               = VK_SAMPLE_COUNT_4_BIT,
+            .tiling                = VK_IMAGE_TILING_OPTIMAL,
+            .usage                 = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+            .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
+            //.queueFamilyIndexCount = ,
+            //.pQueueFamilyIndices   = ,
+            .initialLayout         = VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        CHECK_VULKAN_RESULT(vkCreateImage(DEVICE, &create_info, NULL, &RENDER_TARGET));
+
+        VkMemoryRequirements reqs;
+        vkGetImageMemoryRequirements(DEVICE, RENDER_TARGET, &reqs);
+
+        VkPhysicalDeviceMemoryProperties props;
+        vkGetPhysicalDeviceMemoryProperties(PHYSICAL_DEVICE, &props);
+
+        uint32_t index = 0;
+        for (uint32_t i = 0; i < props.memoryTypeCount; i++) {
+            if ((reqs.memoryTypeBits & (1 << i)) && (props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+                index = i;
+                break;
+            }
+        }
+
+        VkMemoryAllocateInfo allocate_info = {
+            .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext           = NULL,
+            .allocationSize  = reqs.size,
+            .memoryTypeIndex = index,
+        };
+        CHECK_VULKAN_RESULT(vkAllocateMemory(DEVICE, &allocate_info, NULL, &RENDER_TARGET_MEMORY));
+        CHECK_VULKAN_RESULT(vkBindImageMemory(DEVICE, RENDER_TARGET, RENDER_TARGET_MEMORY, 0));
+
+        VkImageViewCreateInfo view_create_info = {
+            .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext            = NULL,
+            .flags            = 0,
+            .image            = RENDER_TARGET,
+            .viewType         = VK_IMAGE_VIEW_TYPE_2D,
+            .format           = format.format,
+            .components       = {
+                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+            },
+            .subresourceRange = {
+                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel   = 0,
+                .levelCount     = 1,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+        };
+        for (size_t i = 0; i < SWAPCHAIN_IMAGE_COUNT; i++) {
+            view_create_info.subresourceRange.baseArrayLayer = i;
+            CHECK_VULKAN_RESULT(vkCreateImageView(DEVICE, &view_create_info, NULL, &RENDER_TARGET_VIEWS[i]));
+        }
     }
 
     // Depth image
@@ -259,7 +335,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
             .extent                = { SWAPCHAIN_EXTENT.width, SWAPCHAIN_EXTENT.height, 1 },
             .mipLevels             = 1,
             .arrayLayers           = 1,
-            .samples               = VK_SAMPLE_COUNT_1_BIT,
+            .samples               = DRIFT_CONFIG.force_aa ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT,
             .tiling                = VK_IMAGE_TILING_OPTIMAL,
             .usage                 = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
             .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
@@ -319,6 +395,19 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
     // Render pass
     {
         VkAttachmentDescription attachments[] = {
+            // Depth buffer
+            {
+                .flags          = 0,
+                .format         = VK_FORMAT_D32_SFLOAT,
+                .samples        = DRIFT_CONFIG.force_aa ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT,
+                .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+                .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            },
+            // Output image (Resolved)
             {
                 .flags          = 0,
                 .format         = format.format,
@@ -330,24 +419,25 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                 .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
                 .finalLayout    = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             },
+            // Render target
             {
                 .flags          = 0,
-                .format         = VK_FORMAT_D32_SFLOAT,
-                .samples        = VK_SAMPLE_COUNT_1_BIT,
-                .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .format         = format.format,
+                .samples        = VK_SAMPLE_COUNT_4_BIT,
+                .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                 .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                 .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                .finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                .finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             },
         };
         const VkRenderPassCreateInfo create_info = {
             .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
             .pNext           = NULL,
             .flags           = 0,
-            .attachmentCount = USE_TRIPLE_BUFFERING ? 1 : 2,
-            .pAttachments    = attachments,
+            .attachmentCount = DRIFT_CONFIG.force_aa ? (USE_TRIPLE_BUFFERING ? 2 : 3) : (USE_TRIPLE_BUFFERING ? 1 : 2),
+            .pAttachments    = USE_TRIPLE_BUFFERING ? attachments + 1 : attachments,
             .subpassCount    = 1,
             .pSubpasses      = (VkSubpassDescription[]) {
                 {
@@ -356,9 +446,9 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                     .inputAttachmentCount    = 0,
                     .pInputAttachments       = NULL,
                     .colorAttachmentCount    = 1,
-                    .pColorAttachments       = (VkAttachmentReference[]) { { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } },
-                    .pResolveAttachments     = NULL,
-                    .pDepthStencilAttachment = USE_TRIPLE_BUFFERING ? NULL : (VkAttachmentReference[]) { { 1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL } },
+                    .pColorAttachments       = (VkAttachmentReference[]) { { DRIFT_CONFIG.force_aa ? (USE_TRIPLE_BUFFERING ? 1 : 2) : (USE_TRIPLE_BUFFERING ? 0 : 1), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } },
+                    .pResolveAttachments     = DRIFT_CONFIG.force_aa ? (VkAttachmentReference[]) { { (USE_TRIPLE_BUFFERING ? 0 : 1), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } } : NULL,
+                    .pDepthStencilAttachment = USE_TRIPLE_BUFFERING ? NULL : (VkAttachmentReference[]) { { 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL } },
                     .preserveAttachmentCount = 0,
                     .pPreserveAttachments    = NULL,
                 }
@@ -396,7 +486,11 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
         };
         CHECK_VULKAN_RESULT(vkCreateRenderPass(DEVICE, &create_info, NULL, &RENDER_PASS));
 
-        attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        if (DRIFT_CONFIG.force_aa) {
+            attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        } else {
+            attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        }
         CHECK_VULKAN_RESULT(vkCreateRenderPass(DEVICE, &create_info, NULL, &CLEARING_RENDER_PASS));
     }
 
@@ -407,7 +501,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
             .pNext           = NULL,
             .flags           = 0,
             .renderPass      = RENDER_PASS,
-            .attachmentCount = USE_TRIPLE_BUFFERING ? 1 : 2,
+            .attachmentCount = DRIFT_CONFIG.force_aa ? (USE_TRIPLE_BUFFERING ? 2 : 3) : (USE_TRIPLE_BUFFERING ? 1 : 2) ,
             //.pAttachments    = ,
             .width           = SWAPCHAIN_EXTENT.width,
             .height          = SWAPCHAIN_EXTENT.height,
@@ -418,7 +512,18 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
         assert(FRAMEBUFFERS != NULL);
 
         for (uint32_t i = 0; i < SWAPCHAIN_IMAGE_COUNT; i++) {
-            create_info.pAttachments = (VkImageView[]) { SWAPCHAIN_IMAGE_VIEWS[i], DEPTH_IMAGE_VIEW };
+            VkImageView views[3];
+            if (DRIFT_CONFIG.force_aa) {
+                views[0] = DEPTH_IMAGE_VIEW;
+                views[1] = SWAPCHAIN_IMAGE_VIEWS[i];
+                views[2] = RENDER_TARGET_VIEWS[i];
+            } else {
+                views[0] = DEPTH_IMAGE_VIEW;
+                views[1] = SWAPCHAIN_IMAGE_VIEWS[i];
+            }
+            create_info.pAttachments = views;
+            if (USE_TRIPLE_BUFFERING)
+                create_info.pAttachments++;
             CHECK_VULKAN_RESULT(vkCreateFramebuffer(DEVICE, &create_info, NULL, &FRAMEBUFFERS[i]));
         }
     }

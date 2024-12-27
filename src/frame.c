@@ -615,6 +615,23 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
 
         CHECK_VULKAN_RESULT(vkBeginCommandBuffer(frame->cb, &begin_info));
 
+        VkClearValue clears[3];
+
+        if (DRIFT_CONFIG.force_aa) {
+            if (USE_TRIPLE_BUFFERING) {
+                clears[1].color = CLEAR_COLOR_VALUE;
+            } else {
+                clears[0].depthStencil = CLEAR_DEPTH_VALUE;
+                clears[2].color = CLEAR_COLOR_VALUE;
+            }
+        } else {
+            if (USE_TRIPLE_BUFFERING) {
+                clears[0].color = CLEAR_COLOR_VALUE;
+            } else {
+                clears[0].depthStencil = CLEAR_DEPTH_VALUE;
+                clears[1].color = CLEAR_COLOR_VALUE;
+            }
+        }
         const VkRenderPassBeginInfo render_pass_begin_info = {
             .sType        = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .pNext        = NULL,
@@ -624,15 +641,8 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
                 .offset = { 0, 0 },
                 .extent = SWAPCHAIN_EXTENT,
             },
-            .clearValueCount = 2,
-            .pClearValues = (VkClearValue[]) {
-                [0] = {
-                    .color = CLEAR_COLOR_VALUE,
-                },
-                [1] = {
-                    .depthStencil = CLEAR_DEPTH_VALUE
-                }
-            },
+            .clearValueCount = 3,
+            .pClearValues = clears,
         };
         vkCmdBeginRenderPass(frame->cb, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
         SHOULD_CLEAR = false;

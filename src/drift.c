@@ -21,6 +21,7 @@
 #include "glide.h"
 #include <assert.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #ifdef __linux__
 #include <dlfcn.h>
@@ -29,6 +30,8 @@
 #include "sst.h"
 
 #include "common.h"
+
+struct DriftConfig DRIFT_CONFIG;
 
 static void *LIB;
 VkInstance INSTANCE;
@@ -231,6 +234,18 @@ FX_ENTRY void FX_CALL grGlideInit()
         };
 
         CHECK_VULKAN_RESULT(vkCreateCommandPool(DEVICE, &create_info, NULL, &POOL));
+    }
+
+    const char *force_aa;
+    if ((force_aa = getenv("DRIFT_FORCE_AA"))) {
+        LOG(LEVEL_INFO, "Forcing AA\n");
+        DRIFT_CONFIG.force_aa = atoi(force_aa);
+    }
+
+    const char *forca_disable_fog;
+    if ((forca_disable_fog = getenv("DRIFT_FORCE_DISABLE_FOG"))) {
+        LOG(LEVEL_INFO, "Forcing Fog Disable\n");
+        DRIFT_CONFIG.force_disable_fog = atoi(forca_disable_fog);
     }
 }
 

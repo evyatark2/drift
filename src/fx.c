@@ -23,7 +23,9 @@ struct StagingFogTable STAGING_FOG_TABLE = {
 FX_ENTRY void FX_CALL grFogMode(GrFogMode_t mode)
 {
     LOG(LEVEL_TRACE, "Called with %d\n", mode);
-    staging_mesh_set_fog_mode(mode);
+    if (!DRIFT_CONFIG.force_disable_fog) {
+        staging_mesh_set_fog_mode(mode);
+    }
 }
 
 FX_ENTRY void FX_CALL grFogTable(const GrFog_t *ft)

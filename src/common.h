@@ -3,10 +3,18 @@
 
 #define _GNU_SOURCE
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "vulkan.h"
+
+struct DriftConfig {
+  bool force_aa;
+  bool force_disable_fog;
+};
+
+extern struct DriftConfig DRIFT_CONFIG;
 
 enum LogLevel {
     LEVEL_TRACE,
