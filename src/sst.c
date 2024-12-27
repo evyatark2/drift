@@ -151,8 +151,11 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
 
     VkSurfaceFormatKHR format;
     {
-        vkGetPhysicalDeviceSurfaceFormatsKHR(PHYSICAL_DEVICE, SURFACE, (uint32_t[]) { 1 }, &format);
-
+        uint32_t count = 2;
+        VkSurfaceFormatKHR formats[2];
+        vkGetPhysicalDeviceSurfaceFormatsKHR(PHYSICAL_DEVICE, SURFACE, &count, formats);
+        format = formats[1];
+        
         LOG(LEVEL_INFO, "Using format: %d\n", format.format);
 
         VkSurfaceCapabilitiesKHR capabilities;
