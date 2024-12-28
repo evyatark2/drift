@@ -17,6 +17,7 @@ extern VkDevice DEVICE;
 extern VkQueue QUEUE;
 extern VkCommandPool POOL;
 extern VkExtent2D RESOLUTION;
+extern VkExtent2D REAL_RESOLUTION;
 extern VkExtent2D SWAPCHAIN_EXTENT;
 extern VkSwapchainKHR SWAPCHAIN;
 extern VkImage *SWAPCHAIN_IMAGES;

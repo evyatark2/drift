@@ -27,6 +27,7 @@ VkDevice DEVICE;
 VkQueue QUEUE;
 VkCommandPool POOL;
 VkExtent2D RESOLUTION;
+VkExtent2D REAL_RESOLUTION;
 VkExtent2D SWAPCHAIN_EXTENT;
 uint32_t SWAPCHAIN_IMAGE_COUNT;
 VkSwapchainKHR SWAPCHAIN;
@@ -129,6 +130,14 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
     }
 
     RESOLUTION = RES_TABLE[screen_resolution];
+    REAL_RESOLUTION = RESOLUTION;
+    
+    if (DRIFT_CONFIG.force_resolution) {
+        int w, h;
+        sscanf(DRIFT_CONFIG.force_resolution, "%dx%d", &w, &h);
+        REAL_RESOLUTION.width = w;
+        REAL_RESOLUTION.height = h;
+    }
 
     {
 #ifdef __linux__
@@ -148,7 +157,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
         LONG lStyle = GetWindowLong((HWND)hWnd, GWL_STYLE);
         lStyle &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
         SetWindowLong((HWND)hWnd, GWL_STYLE, lStyle);
-        SetWindowPos((HWND)hWnd, NULL, 0, 0, RESOLUTION.width, RESOLUTION.height, 0);
+        SetWindowPos((HWND)hWnd, NULL, 0, 0, REAL_RESOLUTION.width, REAL_RESOLUTION.height, 0);
 
         const VkWin32SurfaceCreateInfoKHR create_info = {
             .sType     = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
@@ -174,7 +183,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
         VkSurfaceCapabilitiesKHR capabilities;
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(PHYSICAL_DEVICE, SURFACE, &capabilities);
 
-        SWAPCHAIN_EXTENT = RESOLUTION;
+        SWAPCHAIN_EXTENT = REAL_RESOLUTION;
         if (SWAPCHAIN_EXTENT.width < capabilities.minImageExtent.width) {
             LOG(LEVEL_WARNING, "Width less than min extent width; width: %u, min: %u\n", SWAPCHAIN_EXTENT.width, capabilities.minImageExtent.width);
             SWAPCHAIN_EXTENT.width = capabilities.minImageExtent.width;

@@ -253,6 +253,11 @@ FX_ENTRY void FX_CALL grGlideInit()
         LOG(LEVEL_INFO, "Enabling post-process effects\n");
         DRIFT_CONFIG.enable_pp = atoi(enable_pp);
     }
+
+    const char *force_resolution;
+    if ((force_resolution = getenv("DRIFT_FORCE_RESOLUTION"))) {
+        DRIFT_CONFIG.force_resolution = force_resolution;
+    }
 }
 
 void grGlideShutdown()
