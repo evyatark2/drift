@@ -22,7 +22,7 @@ VkSampler sampler_get_for_config(struct SamplerConfig *config);
 struct TextureNodeKey {
     uint32_t address;
     uint8_t even_odd;
-    uint8_t small;
+    uint8_t tiny;
     uint8_t large;
     uint8_t aspect;
     uint8_t format;

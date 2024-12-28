@@ -114,7 +114,7 @@ FX_ENTRY void FX_CALL grTexSource(GrChipID_t tmu, FxU32 start_address, FxU32 eve
     struct TextureNodeKey key = {
         .address = start_address,
         .even_odd = even_odd,
-        .small = small_lod,
+        .tiny = small_lod,
         .large = large_lod,
         .aspect = info->aspectRatio,
         .format = info->format,
@@ -643,8 +643,8 @@ static int texture_node_key_cmp(struct TextureNodeKey *t1, struct TextureNodeKey
     if (t1->even_odd != t2->even_odd)
         return (int)t1->even_odd - (int)t2->even_odd;
 
-    if (t1->small != t2->small)
-        return (int)t1->small - (int)t2->small;
+    if (t1->tiny != t2->tiny)
+        return (int)t1->tiny - (int)t2->tiny;
 
     if (t1->large != t2->large)
         return (int)t1->large - (int)t2->large;
@@ -806,7 +806,7 @@ static void fix(struct TextureNode *n)
     n->high = n->key.address + get_aligned_tex_memory(n->key.even_odd, &(GrTexInfo) {
         .aspectRatio = n->key.aspect,
         .format = n->key.format,
-        .smallLod = n->key.small,
+        .smallLod = n->key.tiny,
         .largeLod = n->key.large });
     if (n->left != NULL)
         n->high = MAX(n->high, n->left->high);
