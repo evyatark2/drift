@@ -632,7 +632,7 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
                 clears[1].color = CLEAR_COLOR_VALUE;
             }
         }
-        const VkRenderPassBeginInfo render_pass_begin_info = {
+        VkRenderPassBeginInfo render_pass_begin_info = {
             .sType        = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .pNext        = NULL,
             .renderPass   = SHOULD_CLEAR ? CLEARING_RENDER_PASS : RENDER_PASS,
@@ -660,6 +660,17 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
         }
 
         vkCmdEndRenderPass(frame->cb);
+
+        if (DRIFT_CONFIG.enable_pp) {
+            render_pass_begin_info.renderPass = PP_RENDER_PASS;
+            render_pass_begin_info.framebuffer = PP_FRAMEBUFFERS[CURRENT_BACKBUFFER];
+            vkCmdBeginRenderPass(frame->cb, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+            vkCmdBindDescriptorSets(frame->cb, VK_PIPELINE_BIND_POINT_GRAPHICS, PP_LAYOUT, 0, 1, &PP_SETS[CURRENT_BACKBUFFER], 0, NULL);
+            vkCmdBindPipeline(frame->cb, VK_PIPELINE_BIND_POINT_GRAPHICS, PP_PIPELINE);
+            vkCmdDraw(frame->cb, 3, 1, 0, 0);
+            vkCmdEndRenderPass(frame->cb);
+        }
 
         VkImageMemoryBarrier im_barrier = {
             .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,

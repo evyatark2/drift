@@ -25,9 +25,16 @@ extern VkImage DEPTH_IMAGE;
 extern VkImageView DEPTH_IMAGE_VIEW;
 extern VkRenderPass RENDER_PASS;
 extern VkRenderPass CLEARING_RENDER_PASS;
+extern VkRenderPass PP_RENDER_PASS;
+extern VkPipelineLayout PP_LAYOUT;
+extern VkDescriptorSetLayout PP_SET_LAYOUT;
+extern VkPipeline PP_PIPELINE;
+extern VkDescriptorPool PP_POOL;
+extern VkDescriptorSet *PP_SETS;
 extern VkImage LAST_FRAME;
 extern VkImage LAST_FRAME_MEMORY;
 extern VkFramebuffer *FRAMEBUFFERS;
+extern VkFramebuffer *PP_FRAMEBUFFERS;
 
 #endif
 

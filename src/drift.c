@@ -247,6 +247,12 @@ FX_ENTRY void FX_CALL grGlideInit()
         LOG(LEVEL_INFO, "Forcing Fog Disable\n");
         DRIFT_CONFIG.force_disable_fog = atoi(forca_disable_fog);
     }
+
+    const char *enable_pp;
+    if ((enable_pp = getenv("DRIFT_ENABLE_PP"))) {
+        LOG(LEVEL_INFO, "Enabling post-process effects\n");
+        DRIFT_CONFIG.enable_pp = atoi(enable_pp);
+    }
 }
 
 void grGlideShutdown()

@@ -38,11 +38,21 @@ VkImageView DEPTH_IMAGE_VIEW;
 VkImage RENDER_TARGET;
 VkDeviceMemory RENDER_TARGET_MEMORY;
 VkImageView *RENDER_TARGET_VIEWS;
+VkImage FINAL_TARGET;
+VkDeviceMemory FINAL_TARGET_MEMORY;
+VkImageView *FINAL_TARGET_VIEWS;
 VkRenderPass RENDER_PASS;
 VkRenderPass CLEARING_RENDER_PASS;
+VkRenderPass PP_RENDER_PASS;
+VkPipelineLayout PP_LAYOUT;
+VkDescriptorSetLayout PP_SET_LAYOUT;
+VkPipeline PP_PIPELINE;
+VkDescriptorPool PP_POOL;
+VkDescriptorSet *PP_SETS;
 VkImage LAST_FRAME;
 VkImage LAST_FRAME_MEMORY;
 VkFramebuffer *FRAMEBUFFERS;
+VkFramebuffer *PP_FRAMEBUFFERS;
 
 #define DEFINE_RESOLUTION(w, h) [GR_RESOLUTION_##w##x##h] = { w, h }
 VkExtent2D RES_TABLE[] = {
@@ -250,8 +260,24 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
         }
     }
 
+    // Viewport and scissor
+    {
+        VIEWPORT.x        = 0;
+        VIEWPORT.y        = 0;
+        VIEWPORT.width    = (float)SWAPCHAIN_EXTENT.width;
+        VIEWPORT.height   = (float)SWAPCHAIN_EXTENT.height;
+        VIEWPORT.minDepth = 0.0;
+        VIEWPORT.maxDepth = 1.0;
+
+        SCISSOR.offset = (VkOffset2D) { 0, 0 };
+        SCISSOR.extent = SWAPCHAIN_EXTENT;
+
+        VIEWPORT_STATE.pViewports = &VIEWPORT;
+        VIEWPORT_STATE.pScissors = &SCISSOR;
+    }
+
     // Resolve images
-    if (DRIFT_CONFIG.force_aa) {
+    if (DRIFT_CONFIG.force_aa || DRIFT_CONFIG.enable_pp) {
         RENDER_TARGET_VIEWS = malloc(SWAPCHAIN_IMAGE_COUNT * sizeof(VkImageView));
         assert(RENDER_TARGET_VIEWS != NULL);
         
@@ -264,9 +290,9 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
             .extent                = { SWAPCHAIN_EXTENT.width, SWAPCHAIN_EXTENT.height, 1 },
             .mipLevels             = 1,
             .arrayLayers           = SWAPCHAIN_IMAGE_COUNT,
-            .samples               = VK_SAMPLE_COUNT_4_BIT,
+            .samples               = DRIFT_CONFIG.force_aa ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT,
             .tiling                = VK_IMAGE_TILING_OPTIMAL,
-            .usage                 = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            .usage                 = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | (DRIFT_CONFIG.enable_pp ? VK_IMAGE_USAGE_SAMPLED_BIT : 0),
             .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
             //.queueFamilyIndexCount = ,
             //.pQueueFamilyIndices   = ,
@@ -322,6 +348,394 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
             view_create_info.subresourceRange.baseArrayLayer = i;
             CHECK_VULKAN_RESULT(vkCreateImageView(DEVICE, &view_create_info, NULL, &RENDER_TARGET_VIEWS[i]));
         }
+    }
+
+    // Post-process targets
+    if (DRIFT_CONFIG.enable_pp) {
+        FINAL_TARGET_VIEWS = malloc(SWAPCHAIN_IMAGE_COUNT * sizeof(VkImageView));
+        assert(FINAL_TARGET_VIEWS != NULL);
+        
+        VkImageCreateInfo create_info = {
+            .sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .pNext                 = NULL,
+            .flags                 = 0,
+            .imageType             = VK_IMAGE_TYPE_2D,
+            .format                = format.format,
+            .extent                = { SWAPCHAIN_EXTENT.width, SWAPCHAIN_EXTENT.height, 1 },
+            .mipLevels             = 1,
+            .arrayLayers           = SWAPCHAIN_IMAGE_COUNT,
+            .samples               = VK_SAMPLE_COUNT_4_BIT,
+            .tiling                = VK_IMAGE_TILING_OPTIMAL,
+            .usage                 = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
+            //.queueFamilyIndexCount = ,
+            //.pQueueFamilyIndices   = ,
+            .initialLayout         = VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        CHECK_VULKAN_RESULT(vkCreateImage(DEVICE, &create_info, NULL, &FINAL_TARGET));
+
+        VkMemoryRequirements reqs;
+        vkGetImageMemoryRequirements(DEVICE, FINAL_TARGET, &reqs);
+
+        VkPhysicalDeviceMemoryProperties props;
+        vkGetPhysicalDeviceMemoryProperties(PHYSICAL_DEVICE, &props);
+
+        uint32_t index = 0;
+        for (uint32_t i = 0; i < props.memoryTypeCount; i++) {
+            if ((reqs.memoryTypeBits & (1 << i)) && (props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+                index = i;
+                break;
+            }
+        }
+
+        VkMemoryAllocateInfo allocate_info = {
+            .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext           = NULL,
+            .allocationSize  = reqs.size,
+            .memoryTypeIndex = index,
+        };
+        CHECK_VULKAN_RESULT(vkAllocateMemory(DEVICE, &allocate_info, NULL, &FINAL_TARGET_MEMORY));
+        CHECK_VULKAN_RESULT(vkBindImageMemory(DEVICE, FINAL_TARGET, FINAL_TARGET_MEMORY, 0));
+
+        VkImageViewCreateInfo view_create_info = {
+            .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext            = NULL,
+            .flags            = 0,
+            .image            = FINAL_TARGET,
+            .viewType         = VK_IMAGE_VIEW_TYPE_2D,
+            .format           = format.format,
+            .components       = {
+                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+            },
+            .subresourceRange = {
+                .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel   = 0,
+                .levelCount     = 1,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+        };
+        for (size_t i = 0; i < SWAPCHAIN_IMAGE_COUNT; i++) {
+            view_create_info.subresourceRange.baseArrayLayer = i;
+            CHECK_VULKAN_RESULT(vkCreateImageView(DEVICE, &view_create_info, NULL, &FINAL_TARGET_VIEWS[i]));
+        }
+    }
+
+    if (DRIFT_CONFIG.enable_pp) {
+        VkAttachmentDescription attachments[] = {
+            // Output image (Resolved)
+            {
+                .flags          = 0,
+                .format         = format.format,
+                .samples        = VK_SAMPLE_COUNT_1_BIT,
+                .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
+                .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+                .finalLayout    = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            },
+            // Render target
+            {
+                .flags          = 0,
+                .format         = format.format,
+                .samples        = VK_SAMPLE_COUNT_4_BIT,
+                .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
+                .finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            },
+        };
+
+        const VkRenderPassCreateInfo create_info = {
+            .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            .pNext           = NULL,
+            .flags           = 0,
+            .attachmentCount = DRIFT_CONFIG.force_aa ? 2 : 1,
+            .pAttachments    = attachments,
+            .subpassCount    = 1,
+            .pSubpasses      = (VkSubpassDescription[]) {
+                {
+                    .flags                   = 0,
+                    .pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    .inputAttachmentCount    = 0,
+                    .pInputAttachments       = NULL,
+                    .colorAttachmentCount    = 1,
+                    .pColorAttachments       = (VkAttachmentReference[]) { { DRIFT_CONFIG.force_aa ? 1 : 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } },
+                    .pResolveAttachments     = DRIFT_CONFIG.force_aa ? (VkAttachmentReference[]) { { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } } : NULL,
+                    .pDepthStencilAttachment = NULL,
+                    .preserveAttachmentCount = 0,
+                    .pPreserveAttachments    = NULL,
+                },
+            },
+            .dependencyCount = 2,
+            .pDependencies   = (VkSubpassDependency[]) {
+                {
+                    .srcSubpass      = VK_SUBPASS_EXTERNAL,
+                    .dstSubpass      = 0,
+                    .srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    .dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    .srcAccessMask   = 0,
+                    .dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+                },
+                {
+                    .srcSubpass      = 0,
+                    .dstSubpass      = VK_SUBPASS_EXTERNAL,
+                    .srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    .dstStageMask    = VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    .srcAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    .dstAccessMask   = VK_ACCESS_TRANSFER_READ_BIT,
+                    .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+                },
+            },
+        };
+        CHECK_VULKAN_RESULT(vkCreateRenderPass(DEVICE, &create_info, NULL, &PP_RENDER_PASS));
+        LOG(LEVEL_INFO, "Created render pass\n");
+    }
+
+    if (DRIFT_CONFIG.enable_pp) {
+        VkDescriptorSetLayoutCreateInfo create_info = {
+            .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .pNext        = NULL,
+            .flags        = 0,
+            .bindingCount = 1,
+            .pBindings    = (VkDescriptorSetLayoutBinding[]) {
+                {
+                    .binding            = 0,
+                    .descriptorType     = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                    .descriptorCount    = 1,
+                    .stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT,
+                    .pImmutableSamplers = NULL,
+                }
+            }
+        };
+        vkCreateDescriptorSetLayout(DEVICE, &create_info, NULL, &PP_SET_LAYOUT);
+        LOG(LEVEL_INFO, "Created descriptor set layout\n");
+    }
+
+    if (DRIFT_CONFIG.enable_pp) {
+        const VkPipelineLayoutCreateInfo create_info = {
+            .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .pNext                  = NULL,
+            .flags                  = 0,
+            .setLayoutCount         = 1,
+            .pSetLayouts            = &PP_SET_LAYOUT,
+            .pushConstantRangeCount = 0,
+            //.pPushConstantRanges    = ,
+        };
+        CHECK_VULKAN_RESULT(vkCreatePipelineLayout(DEVICE, &create_info, NULL, &PP_LAYOUT));
+        LOG(LEVEL_INFO, "Created pipeline layout\n");
+    }
+
+    if (DRIFT_CONFIG.enable_pp) {
+        VkPipelineShaderStageCreateInfo stages[] = {
+            {
+                .sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .pNext               = NULL,
+                .flags               = 0,
+                .stage               = VK_SHADER_STAGE_VERTEX_BIT,
+                //.module              = , // Should be initialized in grSstWinOpen
+                .pName               = "main",
+                .pSpecializationInfo = NULL,
+            },
+            {
+                .sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .pNext               = NULL,
+                .flags               = 0,
+                .stage               = VK_SHADER_STAGE_FRAGMENT_BIT,
+                //.module              = , // Should be initialized in grSstWinOpen
+                .pName               = "main",
+                .pSpecializationInfo = NULL,
+            }
+        };
+
+        {
+            size_t size;
+            void *code = load_file("pp_vert.spv", &size);
+
+            VkShaderModuleCreateInfo create_info = {
+                .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                .pNext    = NULL,
+                .flags    = 0,
+                .codeSize = size,
+                .pCode    = code,
+            };
+
+            CHECK_VULKAN_RESULT(vkCreateShaderModule(DEVICE, &create_info, NULL, &stages[0].module));
+
+            free(code);
+            code = load_file("pp_frag.spv", &size);
+            create_info.codeSize = size;
+            create_info.pCode = code;
+
+            CHECK_VULKAN_RESULT(vkCreateShaderModule(DEVICE, &create_info, NULL, &stages[1].module));
+        }
+
+        VkPipelineVertexInputStateCreateInfo input_state = {
+            .sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            .pNext                           = NULL,
+            .flags                           = 0,
+            .vertexBindingDescriptionCount   = 0,
+            //.pVertexBindingDescriptions      = ,
+            .vertexAttributeDescriptionCount = 0,
+            //.pVertexAttributeDescriptions    = ,
+        };
+
+        VkPipelineInputAssemblyStateCreateInfo assembly_state = {
+            .sType                  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            .pNext                  = NULL,
+            .flags                  = 0,
+            .topology               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            .primitiveRestartEnable = VK_FALSE,
+        };
+
+        VkPipelineViewportStateCreateInfo viewport_state = {
+            .sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            .pNext         = NULL,
+            .flags         = 0,
+            .viewportCount = 1,
+            .pViewports    = &VIEWPORT,
+            .scissorCount  = 1,
+            .pScissors     = &SCISSOR,
+        };
+
+        VkPipelineRasterizationStateCreateInfo rasterization_state = {
+            .sType                   = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            .pNext                   = NULL,
+            .flags                   = 0,
+            .depthClampEnable        = VK_FALSE,
+            .rasterizerDiscardEnable = VK_FALSE,
+            .polygonMode             = VK_POLYGON_MODE_FILL,
+            .cullMode                = VK_CULL_MODE_BACK_BIT,
+            .frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            .depthBiasEnable         = VK_FALSE,
+            //.depthBiasConstantFactor = ,
+            //.depthBiasClamp          = ,
+            //.depthBiasSlopeFactor    = ,
+            .lineWidth               = 1.0,
+        };
+
+        VkPipelineMultisampleStateCreateInfo multisample_state = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+            .sampleShadingEnable = VK_FALSE,
+            .minSampleShading = 0.0f,
+            .pSampleMask = NULL,
+            .alphaToCoverageEnable = VK_FALSE,
+            .alphaToOneEnable = VK_FALSE,
+        };
+
+        const VkPipelineColorBlendStateCreateInfo color_blend_state = {
+            .sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            .pNext           = NULL,
+            .flags           = 0,
+            .logicOpEnable   = VK_FALSE,
+            //.logicOp         = ,
+            .attachmentCount = 1,
+            .pAttachments    = (VkPipelineColorBlendAttachmentState[]) {
+                {
+                    .blendEnable         = VK_FALSE,
+                    // The spec says that these should have vaild values even when .blendEnable == FALSE
+                    .srcColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+                    .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+                    .colorBlendOp        = VK_BLEND_OP_ADD,
+                    .srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+                    .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+                    .alphaBlendOp        = VK_BLEND_OP_ADD,
+                    .colorWriteMask      = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+                }
+            },
+            //.blendConstants  = ,
+        };
+
+        VkGraphicsPipelineCreateInfo create_info = {
+            .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .pNext               = NULL,
+            .flags               = 0,
+            .stageCount          = 2,
+            .pStages             = stages,
+            .pVertexInputState   = &input_state,
+            .pInputAssemblyState = &assembly_state,
+            .pTessellationState  = NULL,
+            .pViewportState      = &viewport_state,
+            .pRasterizationState = &rasterization_state,
+            .pMultisampleState   = &multisample_state,
+            .pDepthStencilState  = NULL,
+            .pColorBlendState    = &color_blend_state,
+            .pDynamicState       = NULL,
+            .layout              = PP_LAYOUT,
+            .renderPass          = PP_RENDER_PASS,
+            .subpass             = 0,
+            .basePipelineHandle  = VK_NULL_HANDLE,
+            .basePipelineIndex   = -1,
+        };
+        vkCreateGraphicsPipelines(DEVICE, VK_NULL_HANDLE, 1, &create_info, NULL, &PP_PIPELINE);
+        LOG(LEVEL_INFO, "Created pipeline\n");
+    }
+
+    // Post-process sources
+    if (DRIFT_CONFIG.enable_pp) {
+        VkDescriptorPoolCreateInfo create_info = {
+            .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .pNext         = NULL,
+            .flags         = 0,
+            .maxSets       = SWAPCHAIN_IMAGE_COUNT,
+            .poolSizeCount = 1,
+            .pPoolSizes    = (VkDescriptorPoolSize[]) {
+                { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, SWAPCHAIN_IMAGE_COUNT }
+            },
+        };
+        CHECK_VULKAN_RESULT(vkCreateDescriptorPool(DEVICE, &create_info, NULL, &PP_POOL));
+
+        PP_SETS = malloc(SWAPCHAIN_IMAGE_COUNT * sizeof(VkDescriptorSet));
+        assert(PP_SETS != NULL);
+
+        VkDescriptorSetLayout layouts[SWAPCHAIN_IMAGE_COUNT];
+        for (uint32_t i = 0; i < SWAPCHAIN_IMAGE_COUNT; i++) {
+            layouts[i] = PP_SET_LAYOUT;
+        }
+        VkDescriptorSetAllocateInfo allocate_info = {
+            .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .pNext              = NULL,
+            .descriptorPool     = PP_POOL,
+            .descriptorSetCount = SWAPCHAIN_IMAGE_COUNT,
+            .pSetLayouts        = layouts,
+        };
+        CHECK_VULKAN_RESULT(vkAllocateDescriptorSets(DEVICE, &allocate_info, PP_SETS));
+
+        VkWriteDescriptorSet write = {
+            .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext            = NULL,
+            //.dstSet           = ,
+            .dstBinding       = 0,
+            .dstArrayElement  = 0,
+            .descriptorCount  = 1,
+            .descriptorType   = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+            .pImageInfo       = &(VkDescriptorImageInfo) {
+                //.sampler     = ,
+                //.imageView   = ,
+                //.imageLayout = ,
+            },
+            //.pBufferInfo      = ,
+            //.pTexelBufferView = ,
+        };
+
+        LOG(LEVEL_INFO, "Updating pp sources\n");
+        for (uint32_t i = 0; i < SWAPCHAIN_IMAGE_COUNT; i++) {
+            write.dstSet = PP_SETS[i];
+            write.pImageInfo = &(VkDescriptorImageInfo) { .imageView = RENDER_TARGET_VIEWS[i], .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+            vkUpdateDescriptorSets(DEVICE, 1, &write, 0, NULL);
+        }
+
+        LOG(LEVEL_INFO, "Created pp sources\n");
     }
 
     // Depth image
@@ -417,7 +831,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                 .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                 .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                .finalLayout    = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                .finalLayout    = DRIFT_CONFIG.enable_pp ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             },
             // Render target
             {
@@ -425,11 +839,11 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                 .format         = format.format,
                 .samples        = VK_SAMPLE_COUNT_4_BIT,
                 .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .storeOp        = DRIFT_CONFIG.enable_pp ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                 .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                .finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .finalLayout    = DRIFT_CONFIG.enable_pp ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             },
         };
         const VkRenderPassCreateInfo create_info = {
@@ -447,11 +861,11 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                     .pInputAttachments       = NULL,
                     .colorAttachmentCount    = 1,
                     .pColorAttachments       = (VkAttachmentReference[]) { { DRIFT_CONFIG.force_aa ? (USE_TRIPLE_BUFFERING ? 1 : 2) : (USE_TRIPLE_BUFFERING ? 0 : 1), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } },
-                    .pResolveAttachments     = DRIFT_CONFIG.force_aa ? (VkAttachmentReference[]) { { (USE_TRIPLE_BUFFERING ? 0 : 1), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } } : NULL,
+                    .pResolveAttachments     = DRIFT_CONFIG.force_aa && !DRIFT_CONFIG.enable_pp ? (VkAttachmentReference[]) { { (USE_TRIPLE_BUFFERING ? 0 : 1), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } } : NULL,
                     .pDepthStencilAttachment = USE_TRIPLE_BUFFERING ? NULL : (VkAttachmentReference[]) { { 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL } },
                     .preserveAttachmentCount = 0,
                     .pPreserveAttachments    = NULL,
-                }
+                },
             },
             .dependencyCount = 3,
             .pDependencies   = (VkSubpassDependency[]) {
@@ -468,10 +882,10 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                     .srcSubpass      = 0,
                     .dstSubpass      = VK_SUBPASS_EXTERNAL,
                     .srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                    .dstStageMask    = VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    .dstStageMask    = DRIFT_CONFIG.enable_pp ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
                     .srcAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                    .dstAccessMask   = VK_ACCESS_TRANSFER_READ_BIT,
-                    .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+                    .dstAccessMask   = DRIFT_CONFIG.enable_pp ? VK_ACCESS_SHADER_READ_BIT : VK_ACCESS_TRANSFER_READ_BIT,
+                    .dependencyFlags = DRIFT_CONFIG.enable_pp ? 0 : VK_DEPENDENCY_BY_REGION_BIT,
                 },
                 {
                     .srcSubpass      = VK_SUBPASS_EXTERNAL,
@@ -480,7 +894,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                     .dstStageMask    = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
                     .srcAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                     .dstAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                    .dependencyFlags = 0,
+                    .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
                 }
             },
         };
@@ -519,12 +933,26 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                 views[2] = RENDER_TARGET_VIEWS[i];
             } else {
                 views[0] = DEPTH_IMAGE_VIEW;
-                views[1] = SWAPCHAIN_IMAGE_VIEWS[i];
+                views[1] = DRIFT_CONFIG.enable_pp ? RENDER_TARGET_VIEWS[i] : SWAPCHAIN_IMAGE_VIEWS[i];
             }
-            create_info.pAttachments = views;
-            if (USE_TRIPLE_BUFFERING)
-                create_info.pAttachments++;
+            create_info.pAttachments = USE_TRIPLE_BUFFERING ? views + 1 : views;
             CHECK_VULKAN_RESULT(vkCreateFramebuffer(DEVICE, &create_info, NULL, &FRAMEBUFFERS[i]));
+        }
+
+        LOG(LEVEL_INFO, "Created framebuffers\n");
+
+        if (DRIFT_CONFIG.enable_pp) {
+            PP_FRAMEBUFFERS = malloc(SWAPCHAIN_IMAGE_COUNT * sizeof(VkFramebuffer));
+            assert(PP_FRAMEBUFFERS != NULL);
+
+            create_info.renderPass = PP_RENDER_PASS;
+            create_info.attachmentCount = DRIFT_CONFIG.force_aa ? 2 : 1;
+
+            for (uint32_t i = 0; i < SWAPCHAIN_IMAGE_COUNT; i++) {
+                VkImageView views[2] = { SWAPCHAIN_IMAGE_VIEWS[i], FINAL_TARGET_VIEWS[i]};
+                create_info.pAttachments = views;
+                CHECK_VULKAN_RESULT(vkCreateFramebuffer(DEVICE, &create_info, NULL, &PP_FRAMEBUFFERS[i]));
+            }
         }
     }
 
@@ -549,22 +977,6 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
         create_info.pCode = code;
 
         CHECK_VULKAN_RESULT(vkCreateShaderModule(DEVICE, &create_info, NULL, &SHADER_INFO[1].module));
-    }
-
-    // Viewport and scissor
-    {
-        VIEWPORT.x        = 0;
-        VIEWPORT.y        = 0;
-        VIEWPORT.width    = (float)SWAPCHAIN_EXTENT.width;
-        VIEWPORT.height   = (float)SWAPCHAIN_EXTENT.height;
-        VIEWPORT.minDepth = 0.0;
-        VIEWPORT.maxDepth = 1.0;
-
-        SCISSOR.offset = (VkOffset2D) { 0, 0 };
-        SCISSOR.extent = SWAPCHAIN_EXTENT;
-
-        VIEWPORT_STATE.pViewports = &VIEWPORT;
-        VIEWPORT_STATE.pScissors = &SCISSOR;
     }
 
     {

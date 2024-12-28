@@ -12,6 +12,7 @@
 struct DriftConfig {
   bool force_aa;
   bool force_disable_fog;
+  bool enable_pp;
 };
 
 extern struct DriftConfig DRIFT_CONFIG;
