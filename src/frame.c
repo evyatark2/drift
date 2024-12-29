@@ -42,6 +42,9 @@ struct Frame {
 
     size_t fogTableCapacity;
     size_t fogTableCount;
+    VkBuffer fogTableStagingBuffer;
+    VkDeviceMemory fogTableStagingBufferMemory;
+    size_t fogTableFogCapacity;
     VkBuffer fogTableBuffer;
     VkDeviceMemory fogTableBufferMemory;
     VkDescriptorSet fogTableSet;
@@ -568,6 +571,37 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
             frame->vertexBufferVertexCapacity = frame->vertexCount;
         }
 
+        if (frame->fogTableCount > frame->fogTableFogCapacity) {
+            VkBuffer buf;
+            VkDeviceMemory mem;
+            vk_create_buffer_and_memory(PHYSICAL_DEVICE, DEVICE, frame->fogTableCount * sizeof(struct FogTable), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &buf, &mem);
+            vkDestroyBuffer(DEVICE, frame->fogTableBuffer, NULL);
+            vkFreeMemory(DEVICE, frame->fogTableBufferMemory, NULL);
+            frame->fogTableBuffer = buf;
+            frame->fogTableBufferMemory = mem;
+            frame->fogTableFogCapacity = frame->fogTableCount;
+
+            const VkWriteDescriptorSet write = {
+                .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext            = NULL,
+                .dstSet           = frame->fogTableSet,
+                .dstBinding       = 0,
+                .dstArrayElement  = 0,
+                .descriptorCount  = 1,
+                .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+                //.pImageInfo       = ,
+                .pBufferInfo      = (VkDescriptorBufferInfo[]) {
+                    {
+                        .buffer = frame->fogTableBuffer,
+                        .offset = 0,
+                        .range  = sizeof(struct FogTable),
+                    }
+                },
+                //.pTexelBufferView = ,
+            };
+            vkUpdateDescriptorSets(DEVICE, 1, &write, 0, NULL);
+        }
+
         CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->transferCb, 0));
 
         const VkCommandBufferBeginInfo begin_info = {
@@ -583,19 +617,21 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
             .size      = frame->vertexCount * sizeof(struct DrVertex),
         };
         vkCmdCopyBuffer(frame->transferCb, frame->stagingVertexBuffer, frame->vertexBuffer, 1, &copy);
+        copy.size = frame->fogTableCount * sizeof(struct FogTable);
+        vkCmdCopyBuffer(frame->transferCb, frame->fogTableStagingBuffer, frame->fogTableBuffer, 1, &copy);
 
         VkBufferMemoryBarrier barrier = {
             .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .pNext               = NULL,
             .srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask       = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+            .dstAccessMask       = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_UNIFORM_READ_BIT,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .buffer              = frame->vertexBuffer,
             .offset              = 0,
             .size                = VK_WHOLE_SIZE,
         };
-        vkCmdPipelineBarrier(frame->transferCb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, NULL, 1, &barrier, 0, NULL);
+        vkCmdPipelineBarrier(frame->transferCb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 1, &barrier, 0, NULL);
 
         CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->transferCb));
 
@@ -971,9 +1007,14 @@ int frames_init(VkPhysicalDevice physical_device, VkDevice device, size_t width,
         frame->vertexBuffer = VK_NULL_HANDLE;
         frame->vertexBufferMemory = VK_NULL_HANDLE;
 
-        vk_create_buffer_and_memory(physical_device, device, sizeof(struct FogTable), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame->fogTableBuffer, &frame->fogTableBufferMemory);
+        vk_create_buffer_and_memory(physical_device, device, sizeof(struct FogTable), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame->fogTableStagingBuffer, &frame->fogTableStagingBufferMemory);
+
+        vk_create_buffer_and_memory(physical_device, device, sizeof(struct FogTable), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame->fogTableBuffer, &frame->fogTableBufferMemory);
         frame->fogTableVertexCounts = malloc(sizeof(uint32_t));
+        assert(frame->fogTableVertexCounts != NULL);
         frame->fogTableCapacity = 1;
+        frame->fogTableCount = 0;
+        frame->fogTableFogCapacity = 1;
 
         const VkWriteDescriptorSet write = {
             .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1032,14 +1073,14 @@ void frame_add_fog_table(struct Frame *frame, struct FogTable *table)
     if (frame->fogTableCount == frame->fogTableCapacity) {
         VkBuffer buf;
         VkDeviceMemory mem;
-        CHECK_VULKAN_RESULT(vk_create_buffer_and_memory(FRAMES.physicalDevice, FRAMES.device, (frame->fogTableCapacity * 2) * sizeof(struct FogTable), VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT ,&buf, &mem));
-        if (frame->fogTableBufferMemory != VK_NULL_HANDLE) {
+        CHECK_VULKAN_RESULT(vk_create_buffer_and_memory(FRAMES.physicalDevice, FRAMES.device, (frame->fogTableCapacity * 2) * sizeof(struct FogTable), VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT ,&buf, &mem));
+        if (frame->fogTableStagingBufferMemory != VK_NULL_HANDLE) {
             void *new;
             CHECK_VULKAN_RESULT(vkMapMemory(FRAMES.device, mem, 0, frame->fogTableCount * sizeof(struct FogTable), 0, &new));
             void *old;
-            CHECK_VULKAN_RESULT(vkMapMemory(FRAMES.device, frame->fogTableBufferMemory, 0, frame->fogTableCount * sizeof(struct FogTable), 0, &old));
+            CHECK_VULKAN_RESULT(vkMapMemory(FRAMES.device, frame->fogTableStagingBufferMemory, 0, frame->fogTableCount * sizeof(struct FogTable), 0, &old));
             memcpy(new, old, frame->fogTableCount * sizeof(struct FogTable));
-            vkUnmapMemory(FRAMES.device, frame->fogTableBufferMemory);
+            vkUnmapMemory(FRAMES.device, frame->fogTableStagingBufferMemory);
             vkUnmapMemory(FRAMES.device, mem);
         }
 
@@ -1049,37 +1090,17 @@ void frame_add_fog_table(struct Frame *frame, struct FogTable *table)
 
         frame->fogTableVertexCounts = temp;
 
-        vkDestroyBuffer(FRAMES.device, frame->fogTableBuffer, NULL);
-        vkFreeMemory(FRAMES.device, frame->fogTableBufferMemory, NULL);
-        frame->fogTableBuffer = buf;
-        frame->fogTableBufferMemory = mem;
+        vkDestroyBuffer(FRAMES.device, frame->fogTableStagingBuffer, NULL);
+        vkFreeMemory(FRAMES.device, frame->fogTableStagingBufferMemory, NULL);
+        frame->fogTableStagingBuffer = buf;
+        frame->fogTableStagingBufferMemory = mem;
         frame->fogTableCapacity *= 2;
-
-        const VkWriteDescriptorSet write = {
-            .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .pNext            = NULL,
-            .dstSet           = frame->fogTableSet,
-            .dstBinding       = 0,
-            .dstArrayElement  = 0,
-            .descriptorCount  = 1,
-            .descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-            //.pImageInfo       = ,
-            .pBufferInfo      = (VkDescriptorBufferInfo[]) {
-                {
-                    .buffer = frame->fogTableBuffer,
-                    .offset = 0,
-                    .range  = sizeof(struct FogTable),
-                }
-            },
-            //.pTexelBufferView = ,
-        };
-        vkUpdateDescriptorSets(FRAMES.device, 1, &write, 0, NULL);
     }
 
     void *mapped;
-    CHECK_VULKAN_RESULT(vkMapMemory(FRAMES.device, frame->fogTableBufferMemory, frame->fogTableCount * sizeof(struct FogTable), sizeof(struct FogTable), 0, &mapped));
+    CHECK_VULKAN_RESULT(vkMapMemory(FRAMES.device, frame->fogTableStagingBufferMemory, frame->fogTableCount * sizeof(struct FogTable), sizeof(struct FogTable), 0, &mapped));
     memcpy(mapped, table, sizeof(struct FogTable));
-    vkUnmapMemory(FRAMES.device, frame->fogTableBufferMemory);
+    vkUnmapMemory(FRAMES.device, frame->fogTableStagingBufferMemory);
 
     frame->fogTableVertexCounts[frame->fogTableCount] = 0;
     frame->fogTableCount++;
