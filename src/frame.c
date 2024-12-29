@@ -917,17 +917,25 @@ int frames_init(VkPhysicalDevice physical_device, VkDevice device, size_t width,
         };
         CHECK_VULKAN_RESULT(vkCreateDescriptorSetLayout(device, &create_info, NULL, &FRAMES.projectionMatrixSetLayout));
 
+        VkDescriptorSetLayoutBindingFlagsCreateInfo binding_flags = {
+            .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+            .pNext         = NULL,
+            .bindingCount  = 1,
+            .pBindingFlags = &(VkDescriptorBindingFlags) { VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT },
+        };
+        create_info.pNext = &binding_flags;
         create_info.pBindings    = (VkDescriptorSetLayoutBinding[]) {
             {
                 .binding            = 0,
-                    .descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                    .descriptorCount    = GLIDE_NUM_TMU,
-                    .stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT,
-                    .pImmutableSamplers = NULL,
+                .descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .descriptorCount    = GLIDE_NUM_TMU,
+                .stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT,
+                .pImmutableSamplers = NULL,
             },
         };
         CHECK_VULKAN_RESULT(vkCreateDescriptorSetLayout(device, &create_info, NULL, &FRAMES.colorTextureSetLayout));
 
+        create_info.pNext = NULL;
         create_info.pBindings    = (VkDescriptorSetLayoutBinding[]) {
             {
                 .binding            = 0,

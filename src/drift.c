@@ -185,25 +185,19 @@ FX_ENTRY void FX_CALL grGlideInit()
             .pQueuePriorities = (float[]) { 1.0f },
         };
 
-        const char *const exts[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME, VK_EXT_ROBUSTNESS_2_EXTENSION_NAME };
+        const char *const exts[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
-        VkPhysicalDeviceRobustness2FeaturesEXT robustness = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT,
-            .pNext = NULL,
-            .robustBufferAccess2 = VK_FALSE,
-            .robustImageAccess2 = VK_FALSE,
-            .nullDescriptor = VK_TRUE,
-        };
-
-        VkPhysicalDeviceUniformBufferStandardLayoutFeaturesKHR uniform_standard_layout = {
-            .sType                       = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES_KHR,
-            .pNext                       = &robustness,
-            .uniformBufferStandardLayout = VK_TRUE,
+        VkPhysicalDeviceVulkan12Features vk12 = {
+            .sType                           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+            .pNext                           = NULL,
+            //.descriptorIndexing              = VK_TRUE,
+            .descriptorBindingPartiallyBound = VK_TRUE,
+            .uniformBufferStandardLayout     = VK_TRUE,
         };
 
         const VkDeviceCreateInfo create_info = {
             .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext                   = &uniform_standard_layout,
+            .pNext                   = &vk12,
             .flags                   = 0,
             .queueCreateInfoCount    = 1,
             .pQueueCreateInfos       = &queue_info,

@@ -1,6 +1,7 @@
 #include "mesh.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -249,11 +250,14 @@ void mesh_array_get_descriptor_writes(struct MeshArray *array, VkDescriptorSet *
     for (size_t i = 0; i < array->count; i++) {
         struct Mesh *mesh = array->meshes + i;
 
+        uint32_t count = 0;
         for (uint32_t j = 0; j < GLIDE_NUM_TMU; j++) {
-            image_infos[i*GLIDE_NUM_TMU + j].sampler = mesh->samplers[j];
-            image_infos[i*GLIDE_NUM_TMU + j].imageView = mesh->info.views[j];
-            image_infos[i*GLIDE_NUM_TMU + j].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
+            if (mesh->info.views[j] != VK_NULL_HANDLE) {
+                image_infos[i*GLIDE_NUM_TMU + count].sampler = mesh->samplers[j];
+                image_infos[i*GLIDE_NUM_TMU + count].imageView = mesh->info.views[j];
+                image_infos[i*GLIDE_NUM_TMU + count].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                count++;
+            }
         }
 
         LOG(LEVEL_TRACE, "Descriptor views: %llu, %llu\n", mesh->info.views[0], mesh->info.views[1]);
@@ -262,7 +266,7 @@ void mesh_array_get_descriptor_writes(struct MeshArray *array, VkDescriptorSet *
         writes[i].dstSet           = sets[i];
         writes[i].dstBinding       = 0;
         writes[i].dstArrayElement  = 0;
-        writes[i].descriptorCount  = GLIDE_NUM_TMU;
+        writes[i].descriptorCount  = count;
         writes[i].descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo       = image_infos + i * GLIDE_NUM_TMU;
     }
