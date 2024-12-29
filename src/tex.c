@@ -568,12 +568,12 @@ static int32_t get_tex_memory(FxU32 even_odd, const GrTexInfo* info)
 
 static int32_t get_aligned_tex_memory(FxU32 even_odd, const GrTexInfo* info)
 {
-    int32_t sum = get_tex_memory(even_odd, info);
+    int32_t ret = get_tex_memory(even_odd, info);
 
     // 8-byte align
-    sum = sum + (7 - (sum - 1) % 8);
+    ret = ret + (7 - (ret - 1) % 8);
 
-    return sum;
+    return ret;
 }
 
 static struct TransferNode *get_cb()
@@ -608,7 +608,7 @@ static struct TransferNode *get_cb()
                 .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
                 .commandBufferCount = CB_RING.capacity,
             };
-            vkAllocateCommandBuffers(DEVICE, &allocate_info, cbs);
+            CHECK_VULKAN_RESULT(vkAllocateCommandBuffers(DEVICE, &allocate_info, cbs));
 
             VkFenceCreateInfo create_info = {
                 .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -617,7 +617,7 @@ static struct TransferNode *get_cb()
             };
             for (size_t i_ = 0; i_ < CB_RING.capacity; i_++) {
                 size_t i = (CB_RING.start + CB_RING.len + i_) % (CB_RING.capacity * 2);
-                vkCreateFence(DEVICE, &create_info, NULL, &CB_RING.nodes[i].fence);
+                CHECK_VULKAN_RESULT(vkCreateFence(DEVICE, &create_info, NULL, &CB_RING.nodes[i].fence));
                 CB_RING.nodes[i].cb = cbs[i_];
                 CB_RING.nodes[i].buf = VK_NULL_HANDLE;
                 CB_RING.nodes[i].mem = VK_NULL_HANDLE;
