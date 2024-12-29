@@ -817,6 +817,27 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
 
     // Render pass
     {
+        /* The table below describes the various values in the structures below
+         * when one is given the boolean triplet (enable_pp, force_aa, USE_TRIPLE_BUFFERING)*/
+        /*  +----------+-----------+-----------+-----------+-----------+
+            | pp/aa+TB | 00        | 01        | 10        | 11        |
+            +----------+-----------+-----------+-----------+-----------+
+            | 0        | Depth     | Swapchain | Depth     | Swapchain |
+            |          | Swapchain |           | Swapchain | Target4   |
+            |          |           |           | Tatget4   |           |
+            +----------+-----------+-----------+-----------+-----------+
+            | 1        | Depth     | Target    | Depth     | Target4   |
+            |          | Target    |           | Target4   |           |
+            +----------+-----------+-----------+-----------+-----------+
+
+            Where:
+                Depth - depth attachment when Triple buffering is off
+                Swapchain - A swapchain image should be attached in the framebuffer;
+                    used when no post-process is necessary so we can immediatly resolve/render to the swapchain
+                Target - A non-swapchain single-sampled image should be attached in the framebuffer;
+                    needed when multisampling isn't enabled and we need the output for the post-process render pass
+                Target4 - A non-swapchain multi-sampled image should be attached;
+                    used either as a render target when multisampling, or as an input for the post-process render pass */
         VkAttachmentDescription attachments[] = {
             // Depth buffer
             {
@@ -834,13 +855,13 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
             {
                 .flags          = 0,
                 .format         = format.format,
-                .samples        = VK_SAMPLE_COUNT_1_BIT,
+                .samples        = DRIFT_CONFIG.force_aa && DRIFT_CONFIG.enable_pp ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT,
                 .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                 .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
                 .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                 .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                .finalLayout    = DRIFT_CONFIG.enable_pp ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                .finalLayout    = DRIFT_CONFIG.enable_pp ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             },
             // Render target
             {
@@ -848,18 +869,18 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                 .format         = format.format,
                 .samples        = VK_SAMPLE_COUNT_4_BIT,
                 .loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                .storeOp        = DRIFT_CONFIG.enable_pp ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 .stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                 .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                 .initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED,
-                .finalLayout    = DRIFT_CONFIG.enable_pp ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             },
         };
         const VkRenderPassCreateInfo create_info = {
             .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
             .pNext           = NULL,
             .flags           = 0,
-            .attachmentCount = DRIFT_CONFIG.force_aa ? (USE_TRIPLE_BUFFERING ? 2 : 3) : (USE_TRIPLE_BUFFERING ? 1 : 2),
+            .attachmentCount = DRIFT_CONFIG.force_aa ? (USE_TRIPLE_BUFFERING ? (DRIFT_CONFIG.enable_pp ? 1 : 2) : (DRIFT_CONFIG.enable_pp ? 2 : 3)) : (USE_TRIPLE_BUFFERING ? 1 : 2),
             .pAttachments    = USE_TRIPLE_BUFFERING ? attachments + 1 : attachments,
             .subpassCount    = 1,
             .pSubpasses      = (VkSubpassDescription[]) {
@@ -869,7 +890,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
                     .inputAttachmentCount    = 0,
                     .pInputAttachments       = NULL,
                     .colorAttachmentCount    = 1,
-                    .pColorAttachments       = (VkAttachmentReference[]) { { DRIFT_CONFIG.force_aa ? (USE_TRIPLE_BUFFERING ? 1 : 2) : (USE_TRIPLE_BUFFERING ? 0 : 1), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } },
+                    .pColorAttachments       = (VkAttachmentReference[]) { { DRIFT_CONFIG.force_aa ? (USE_TRIPLE_BUFFERING ? (DRIFT_CONFIG.enable_pp ? 0 : 1) : (DRIFT_CONFIG.enable_pp ? 1 : 2)) : (USE_TRIPLE_BUFFERING ? 0 : 1), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } },
                     .pResolveAttachments     = DRIFT_CONFIG.force_aa && !DRIFT_CONFIG.enable_pp ? (VkAttachmentReference[]) { { (USE_TRIPLE_BUFFERING ? 0 : 1), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } } : NULL,
                     .pDepthStencilAttachment = USE_TRIPLE_BUFFERING ? NULL : (VkAttachmentReference[]) { { 0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL } },
                     .preserveAttachmentCount = 0,
@@ -924,7 +945,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
             .pNext           = NULL,
             .flags           = 0,
             .renderPass      = RENDER_PASS,
-            .attachmentCount = DRIFT_CONFIG.force_aa ? (USE_TRIPLE_BUFFERING ? 2 : 3) : (USE_TRIPLE_BUFFERING ? 1 : 2) ,
+            .attachmentCount = DRIFT_CONFIG.force_aa ? (USE_TRIPLE_BUFFERING ? ( DRIFT_CONFIG.enable_pp ? 1 : 2) : (DRIFT_CONFIG.enable_pp ? 2 : 3)) : (USE_TRIPLE_BUFFERING ? 1 : 2),
             //.pAttachments    = ,
             .width           = SWAPCHAIN_EXTENT.width,
             .height          = SWAPCHAIN_EXTENT.height,
@@ -938,7 +959,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
             VkImageView views[3];
             if (DRIFT_CONFIG.force_aa) {
                 views[0] = DEPTH_IMAGE_VIEW;
-                views[1] = SWAPCHAIN_IMAGE_VIEWS[i];
+                views[1] = DRIFT_CONFIG.enable_pp ? RENDER_TARGET_VIEWS[i] : SWAPCHAIN_IMAGE_VIEWS[i];
                 views[2] = RENDER_TARGET_VIEWS[i];
             } else {
                 views[0] = DEPTH_IMAGE_VIEW;
