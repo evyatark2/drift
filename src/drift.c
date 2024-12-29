@@ -238,19 +238,16 @@ FX_ENTRY void FX_CALL grGlideInit()
 
     const char *force_aa;
     if ((force_aa = getenv("DRIFT_FORCE_AA"))) {
-        LOG(LEVEL_INFO, "Forcing AA\n");
         DRIFT_CONFIG.force_aa = atoi(force_aa);
     }
 
     const char *forca_disable_fog;
     if ((forca_disable_fog = getenv("DRIFT_FORCE_DISABLE_FOG"))) {
-        LOG(LEVEL_INFO, "Forcing Fog Disable\n");
         DRIFT_CONFIG.force_disable_fog = atoi(forca_disable_fog);
     }
 
     const char *enable_pp;
     if ((enable_pp = getenv("DRIFT_ENABLE_PP"))) {
-        LOG(LEVEL_INFO, "Enabling post-process effects\n");
         DRIFT_CONFIG.enable_pp = atoi(enable_pp);
     }
 

@@ -21,6 +21,7 @@ struct Frame {
     VkSemaphore renderFinishedSemaphore;
     VkFence transferFence;
     VkFence fence;
+    bool waitForMainFence;
     size_t pipelineCount;
     struct Pipeline **pipelines;
     size_t poolSize;
@@ -90,6 +91,7 @@ void frame_present(struct Frame *frame)
 
 void frame_lock(struct Frame *frame, void **ptr)
 {
+    CHECK_VULKAN_RESULT(vkWaitForFences(FRAMES.device, 1, &frame->fence, VK_TRUE, UINT64_MAX));
     vkDestroyImage(FRAMES.device, frame->stagingFrame, NULL);
     vkFreeMemory(FRAMES.device, frame->stagingFrameMemory, NULL);
     const VkImageCreateInfo create_info = {
@@ -236,7 +238,7 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
     if (pipeline_array_mesh_count(pa) == 0) {
         if (!SKIP_RENDER) {
             LOG(LEVEL_DEBUG, "Noop\n");
-            CHECK_VULKAN_RESULT(vkWaitForFences(DEVICE, 1, &frame->fence, VK_TRUE, UINT64_MAX));
+            CHECK_VULKAN_RESULT(vkWaitForFences(FRAMES.device, 1, &frame->fence, VK_TRUE, UINT64_MAX));
             CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->cb, 0));
 
             const VkCommandBufferBeginInfo begin_info = {
@@ -333,9 +335,8 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
             };
             CHECK_VULKAN_RESULT(vkResetFences(DEVICE, 1, &frame->fence));
             CHECK_VULKAN_RESULT(vkQueueSubmit(QUEUE, 1, &submit_info, frame->fence));
-
         } else {
-            CHECK_VULKAN_RESULT(vkWaitForFences(DEVICE, 1, &frame->fence, VK_FALSE, UINT64_MAX));
+            // No need to wait for fences as we've waited in frame_lock()
             CHECK_VULKAN_RESULT(vkResetCommandBuffer(frame->cb, 0));
 
             const VkCommandBufferBeginInfo begin_info = {
@@ -474,7 +475,10 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
 
             SKIP_RENDER = false;
         }
+        frame->waitForMainFence = true;
     } else {
+        CHECK_VULKAN_RESULT(vkWaitForFences(FRAMES.device, 1, &frame->fence, VK_TRUE, UINT64_MAX));
+
         if (frame->poolSize < pipeline_array_mesh_count(pa)) {
             VkDescriptorPoolSize sizes[] = {
                 {
@@ -553,8 +557,6 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
         free(writes);
         free(image_infos);
 
-        CHECK_VULKAN_RESULT(vkWaitForFences(DEVICE, 1, &frame->fence, VK_FALSE, UINT64_MAX));
-
         if (frame->vertexCount > frame->vertexBufferVertexCapacity) {
             VkBuffer buf;
             VkDeviceMemory mem;
@@ -600,9 +602,9 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
         VkSubmitInfo submit_info = {
             .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .pNext                = NULL,
-            .waitSemaphoreCount   = 0,
-            //.pWaitSemaphores      = ,
-            //.pWaitDstStageMask    = ,
+            .waitSemaphoreCount   = 1,
+            .pWaitSemaphores      = &frame->imageAcquiredSemaphore,
+            .pWaitDstStageMask    = &(VkPipelineStageFlags) { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT },
             .commandBufferCount   = 1,
             .pCommandBuffers      = &frame->transferCb,
             .signalSemaphoreCount = 0,
@@ -726,9 +728,9 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
 
         CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->cb));
 
-        submit_info.waitSemaphoreCount   = 1;
-        submit_info.pWaitSemaphores      = &frame->imageAcquiredSemaphore;
-        submit_info.pWaitDstStageMask    = (VkPipelineStageFlags[]) { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        submit_info.waitSemaphoreCount   = 0;
+        //submit_info.pWaitSemaphores      = &frame->imageAcquiredSemaphore;
+        //submit_info.pWaitDstStageMask    = (VkPipelineStageFlags[]) { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         submit_info.commandBufferCount   = 1;
         submit_info.pCommandBuffers      = &frame->cb;
         submit_info.signalSemaphoreCount = 1;
@@ -957,6 +959,8 @@ int frames_init(VkPhysicalDevice physical_device, VkDevice device, size_t width,
         CHECK_VULKAN_RESULT(vkCreateFence(device, &fence_info, NULL, &frame->fence));
         CHECK_VULKAN_RESULT(vkCreateFence(device, &fence_info, NULL, &frame->transferFence));
 
+        frame->waitForMainFence = false;
+
         CHECK_VULKAN_RESULT(vkCreateSemaphore(device, &semaphore_info, NULL, &frame->imageAcquiredSemaphore));
         CHECK_VULKAN_RESULT(vkCreateSemaphore(device, &semaphore_info, NULL, &frame->renderFinishedSemaphore));
 
@@ -1126,7 +1130,12 @@ void frames_advance()
     FRAMES.current %= MAX_CONCURRENT_FRAMES;
     struct Frame *frame = FRAMES.frames + FRAMES.current;
 
-    CHECK_VULKAN_RESULT(vkWaitForFences(FRAMES.device, 1, &frame->transferFence, VK_TRUE, UINT64_MAX));
+    if (frame->waitForMainFence) {
+        CHECK_VULKAN_RESULT(vkWaitForFences(FRAMES.device, 1, &frame->fence, VK_TRUE, UINT64_MAX));
+        frame->waitForMainFence = false;
+    } else {
+        CHECK_VULKAN_RESULT(vkWaitForFences(FRAMES.device, 1, &frame->transferFence, VK_TRUE, UINT64_MAX));
+    }
 
     CHECK_VULKAN_RESULT(vkAcquireNextImageKHR(FRAMES.device, SWAPCHAIN, UINT64_MAX, frame->imageAcquiredSemaphore, VK_NULL_HANDLE, &CURRENT_BACKBUFFER));
 
