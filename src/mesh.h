@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-//#include "glide.h"
 #include "vulkan.h"
 
 extern size_t PC_STRUCT_SIZE;
@@ -44,7 +43,7 @@ size_t mesh_array_size(struct MeshArray *array);
 void mesh_array_free(struct MeshArray *array);
 void mesh_array_add_vertices(struct MeshArray *array, size_t count);
 struct Mesh *mesh_array_get(struct MeshArray *array);
-void mesh_array_get_descriptor_writes(struct MeshArray *array, VkDescriptorSet *sets, VkWriteDescriptorSet *writes, VkDescriptorImageInfo *image_infos);
+uint32_t mesh_array_get_descriptor_writes(struct MeshArray *array, VkDescriptorSet *sets, VkWriteDescriptorSet *writes, VkDescriptorImageInfo *image_infos);
 uint32_t mesh_array_render(struct MeshArray *array, VkCommandBuffer cb, VkPipelineLayout layout, VkDescriptorSet *sets, uint32_t vertex_count, uint32_t vertex_offset, uint32_t base_offset);
 uint32_t mesh_array_vertex_count(struct MeshArray *array);
 

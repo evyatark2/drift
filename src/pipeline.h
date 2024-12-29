@@ -2,6 +2,7 @@
 #define DRIFT_PIPELINE_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "vulkan.h"
 #include "glide.h"
@@ -36,7 +37,7 @@ void pipeline_array_reset(struct PipelineArray *pls);
 size_t pipeline_array_size(struct PipelineArray *pa);
 void pipeline_array_add_triangle(struct PipelineArray *pa);
 size_t pipeline_array_mesh_count(struct PipelineArray *pa);
-void pipeline_array_get_descriptor_writes(struct PipelineArray *pa, VkDescriptorSet *sets, VkWriteDescriptorSet *writes, VkDescriptorImageInfo *image_infos);
+uint32_t pipeline_array_get_descriptor_writes(struct PipelineArray *pa, VkDescriptorSet *sets, VkWriteDescriptorSet *writes, VkDescriptorImageInfo *image_infos);
 void pipeline_array_get_create_infos(struct PipelineArray *pa, VkGraphicsPipelineCreateInfo *create_infos);
 struct PipelineInfo *pipeline_array_get_last(struct PipelineArray *pls);
 void pipeline_array_get_all(struct PipelineArray *pa, struct PipelineConfig **configs);

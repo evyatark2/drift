@@ -1,8 +1,8 @@
 #include "frame.h"
 
 #include <assert.h>
+#include <stdint.h>
 #include <string.h>
-#include <vulkan/vulkan_core.h>
 
 #include "buffer.h"
 #include "common.h"
@@ -552,11 +552,11 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
 
         VkDescriptorImageInfo *image_infos = malloc(pipeline_array_mesh_count(pa) * GLIDE_NUM_TMU * sizeof(VkDescriptorImageInfo));
         assert(image_infos != NULL);
-        VkWriteDescriptorSet *writes = malloc(pipeline_array_mesh_count(pa) * sizeof(VkWriteDescriptorSet));
+        VkWriteDescriptorSet *writes = malloc(pipeline_array_mesh_count(pa) * GLIDE_NUM_TMU * sizeof(VkWriteDescriptorSet));
         assert(writes != NULL);
 
-        pipeline_array_get_descriptor_writes(pa, frame->sets, writes, image_infos);
-        vkUpdateDescriptorSets(DEVICE, pipeline_array_mesh_count(pa), writes, 0, NULL);
+        uint32_t count = pipeline_array_get_descriptor_writes(pa, frame->sets, writes, image_infos);
+        vkUpdateDescriptorSets(DEVICE, count, writes, 0, NULL);
         free(writes);
         free(image_infos);
 

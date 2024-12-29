@@ -1,6 +1,7 @@
 #include "pipeline.h"
 
 #include <assert.h>
+#include <stdint.h>
 
 #include "common.h"
 #include "sst.h"
@@ -394,14 +395,17 @@ size_t pipeline_array_mesh_count(struct PipelineArray *pa)
     return count;
 }
 
-void pipeline_array_get_descriptor_writes(struct PipelineArray *pa, VkDescriptorSet *sets, VkWriteDescriptorSet *writes, VkDescriptorImageInfo *image_infos)
+uint32_t pipeline_array_get_descriptor_writes(struct PipelineArray *pa, VkDescriptorSet *sets, VkWriteDescriptorSet *writes, VkDescriptorImageInfo *image_infos)
 {
     uint32_t current_mesh = 0;
+    uint32_t count = 0;
     for (size_t i = 0; i < pa->count; i++) {
         struct PipelineInfo *pipeline = pa->infos + i;
-        mesh_array_get_descriptor_writes(pipeline->meshes, sets + current_mesh, &writes[current_mesh], &image_infos[current_mesh * GLIDE_NUM_TMU]);
+        count += mesh_array_get_descriptor_writes(pipeline->meshes, &sets[current_mesh], &writes[count], &image_infos[count]);
         current_mesh += mesh_array_size(pipeline->meshes);
     }
+
+    return count;
 }
 
 uint32_t pipeline_array_render(struct PipelineArray *array, VkCommandBuffer cb, VkPipelineLayout layout, struct Pipeline **pipelines, uint32_t vertex_count, uint32_t vertex_offset, VkDescriptorSet *sets)
