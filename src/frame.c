@@ -620,18 +620,31 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
         copy.size = frame->fogTableCount * sizeof(struct FogTable);
         vkCmdCopyBuffer(frame->transferCb, frame->fogTableStagingBuffer, frame->fogTableBuffer, 1, &copy);
 
-        VkBufferMemoryBarrier barrier = {
-            .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .pNext               = NULL,
-            .srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .dstAccessMask       = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_UNIFORM_READ_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer              = frame->vertexBuffer,
-            .offset              = 0,
-            .size                = VK_WHOLE_SIZE,
+        VkBufferMemoryBarrier barriers[2] = {
+            {
+                .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                .pNext               = NULL,
+                .srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .dstAccessMask       = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .buffer              = frame->vertexBuffer,
+                .offset              = 0,
+                .size                = VK_WHOLE_SIZE,
+            },
+            {
+                .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                .pNext               = NULL,
+                .srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .dstAccessMask       = VK_ACCESS_UNIFORM_READ_BIT,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .buffer              = frame->fogTableBuffer,
+                .offset              = 0,
+                .size                = VK_WHOLE_SIZE,
+            },
         };
-        vkCmdPipelineBarrier(frame->transferCb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 1, &barrier, 0, NULL);
+        vkCmdPipelineBarrier(frame->transferCb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 2, barriers, 0, NULL);
 
         CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->transferCb));
 
