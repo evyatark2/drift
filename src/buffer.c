@@ -53,8 +53,10 @@ FX_ENTRY void FX_CALL grBufferSwap(int swap_interval)
     FRAME_COUNT++;
     LOG(LEVEL_TRACE, "------------- Frame %d -------------\n", FRAME_COUNT);
 
-    for (int i = 0; i < swap_interval; i++) {
-        frame_skip(frames_get_current());
+    if (!DRIFT_CONFIG.ignore_frame_skips) {
+        for (int i = 0; i < swap_interval; i++) {
+            frame_skip(frames_get_current());
+        }
     }
 
     frame_render(frames_get_current(), PIPELINES);

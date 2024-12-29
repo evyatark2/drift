@@ -255,6 +255,11 @@ FX_ENTRY void FX_CALL grGlideInit()
     if ((force_resolution = getenv("DRIFT_FORCE_RESOLUTION"))) {
         DRIFT_CONFIG.force_resolution = force_resolution;
     }
+
+    const char *ignore_frame_skips;
+    if ((ignore_frame_skips = getenv("DRIFT_IGNORE_FRAME_SKIPS"))) {
+        DRIFT_CONFIG.ignore_frame_skips = atoi(ignore_frame_skips);
+    }
 }
 
 void grGlideShutdown()

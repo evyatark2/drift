@@ -13,6 +13,7 @@ struct DriftConfig {
   bool force_aa;
   bool force_disable_fog;
   bool enable_pp;
+  bool ignore_frame_skips;
   const char *force_resolution;
 };
 
