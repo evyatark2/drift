@@ -159,7 +159,7 @@ vec4 trueColorEdge(float stepx, float stepy, vec2 center, mat3 kernelX, mat3 ker
 }
 
 void main() {
-	vec2 uv = gl_FragCoord.xy / textureSize(target);
+	vec2 uv = (gl_FragCoord.xy - vec2(0.5) + gl_SamplePosition.xy) / textureSize(target);
   outColor = vec4(0);
   for (int i = 0; i < textureSamples(target); i++) {
 #ifdef KAYYALI_NESW

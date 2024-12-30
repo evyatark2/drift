@@ -195,6 +195,10 @@ FX_ENTRY void FX_CALL grGlideInit()
             .uniformBufferStandardLayout     = VK_TRUE,
         };
 
+        VkPhysicalDeviceFeatures features = {
+            .sampleRateShading = VK_TRUE
+        };
+
         const VkDeviceCreateInfo create_info = {
             .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
             .pNext                   = &vk12,
@@ -205,7 +209,7 @@ FX_ENTRY void FX_CALL grGlideInit()
             //.ppEnabledLayerNames     = ,
             .enabledExtensionCount   = sizeof(exts) / sizeof(exts[0]),
             .ppEnabledExtensionNames = exts,
-            .pEnabledFeatures        = NULL,
+            .pEnabledFeatures        = &features,
         };
 
         CHECK_VULKAN_RESULT(vkCreateDevice(PHYSICAL_DEVICE, &create_info, NULL, &DEVICE));
