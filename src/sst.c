@@ -154,9 +154,10 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
         if (hWnd == 0)
             hWnd = (FxU32)GetActiveWindow();
 
-        LONG lStyle = GetWindowLong((HWND)hWnd, GWL_STYLE);
-        lStyle &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
-        SetWindowLong((HWND)hWnd, GWL_STYLE, lStyle);
+        // Borderless
+        LONG style = GetWindowLong((HWND)hWnd, GWL_STYLE);
+        style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+        SetWindowLong((HWND)hWnd, GWL_STYLE, style);
         SetWindowPos((HWND)hWnd, NULL, 0, 0, REAL_RESOLUTION.width, REAL_RESOLUTION.height, 0);
 
         const VkWin32SurfaceCreateInfoKHR create_info = {
@@ -176,6 +177,7 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
         uint32_t count = 2;
         VkSurfaceFormatKHR formats[2];
         vkGetPhysicalDeviceSurfaceFormatsKHR(PHYSICAL_DEVICE, SURFACE, &count, formats);
+        // FIXME: The second format is most likely a UNORM format, but it isn't guaranteed
         format = formats[1];
         
         LOG(LEVEL_INFO, "Using format: %d\n", format.format);
@@ -817,10 +819,10 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
 
     // Render pass
     {
-        /* The table below describes the various values in the structures below
+        /* This table describes the various values in the structures below
          * when one is given the boolean triplet (enable_pp, force_aa, USE_TRIPLE_BUFFERING)*/
         /*  +----------+-----------+-----------+-----------+-----------+
-            | pp/aa+TB | 00        | 01        | 10        | 11        |
+            | pp/aa,TB | 0,0       | 0,1       | 1,0       | 1,1       |
             +----------+-----------+-----------+-----------+-----------+
             | 0        | Depth     | Swapchain | Depth     | Swapchain |
             |          | Swapchain |           | Swapchain | Target4   |
@@ -930,10 +932,26 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
         };
         CHECK_VULKAN_RESULT(vkCreateRenderPass(DEVICE, &create_info, NULL, &RENDER_PASS));
 
-        if (DRIFT_CONFIG.force_aa) {
-            attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        if (DRIFT_CONFIG.enable_pp) {
+            if (USE_TRIPLE_BUFFERING) {
+                attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            } else {
+                attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            }
         } else {
-            attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            if (DRIFT_CONFIG.force_aa) {
+                if (USE_TRIPLE_BUFFERING) {
+                    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+                } else {
+                    attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+                }
+            } else {
+                if (USE_TRIPLE_BUFFERING) {
+                    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+                } else {
+                    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+                }
+            }
         }
         CHECK_VULKAN_RESULT(vkCreateRenderPass(DEVICE, &create_info, NULL, &CLEARING_RENDER_PASS));
     }
