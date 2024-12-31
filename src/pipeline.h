@@ -21,6 +21,7 @@ void staging_pipeline_set_alpha_blend(VkBlendFactor, VkBlendFactor, VkBlendFacto
 void staging_pipeline_set_color_write_enable(bool enable);
 void staging_pipeline_set_alpha_write_enable(bool enable);
 bool staging_pipeline_changed(void);
+void staging_pipeline_set_topology(VkPrimitiveTopology top);
 struct PipelineConfig *staging_pipeline_get(void);
 void staging_pipeline_force_change(void);
 
@@ -35,7 +36,7 @@ int pipeline_array_init(struct PipelineArray *pa);
 int pipeline_array_append(struct PipelineArray *pls, struct PipelineConfig *config);
 void pipeline_array_reset(struct PipelineArray *pls);
 size_t pipeline_array_size(struct PipelineArray *pa);
-void pipeline_array_add_triangle(struct PipelineArray *pa);
+void pipeline_array_add_primitive(struct PipelineArray *pa);
 size_t pipeline_array_mesh_count(struct PipelineArray *pa);
 uint32_t pipeline_array_get_descriptor_writes(struct PipelineArray *pa, VkDescriptorSet *sets, VkWriteDescriptorSet *writes, VkDescriptorImageInfo *image_infos);
 void pipeline_array_get_create_infos(struct PipelineArray *pa, VkGraphicsPipelineCreateInfo *create_infos);

@@ -18,6 +18,7 @@ struct PipelineConfig {
     VkBlendFactor dstAlphaBlendFactor;
     VkBool32 colorWriteEnable;
     VkBool32 alphaWriteEnable;
+    VkPrimitiveTopology topology;
 };
 
 struct StagingPipeline {
@@ -30,6 +31,7 @@ struct StagingPipeline STAGING_PIPELINE = {
     .next = {
         .colorWriteEnable = VK_TRUE,
         .alphaWriteEnable = VK_TRUE,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
     },
     .count = 1
 };
@@ -138,14 +140,6 @@ static const VkPipelineVertexInputStateCreateInfo INPUT_STATE = {
             .offset = offsetof(struct DrVertex, st2),
         },
     },
-};
-
-static const VkPipelineInputAssemblyStateCreateInfo ASSEMBLY_STATE = {
-    .sType                  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-    .pNext                  = NULL,
-    .flags                  = 0,
-    .topology               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-    .primitiveRestartEnable = VK_FALSE,
 };
 
 VkPipelineViewportStateCreateInfo VIEWPORT_STATE = {
@@ -295,6 +289,11 @@ void staging_pipeline_set_alpha_write_enable(bool enable)
     SET_PIPELINE_PROPERTY(alphaWriteEnable, e);
 }
 
+void staging_pipeline_set_topology(VkPrimitiveTopology top)
+{
+  SET_PIPELINE_PROPERTY(topology, top);
+}
+
 bool staging_pipeline_changed()
 {
     return STAGING_PIPELINE.count > 0;
@@ -381,9 +380,20 @@ size_t pipeline_array_size(struct PipelineArray *pa)
     return pa->count;
 }
 
-void pipeline_array_add_triangle(struct PipelineArray *pa)
+void pipeline_array_add_primitive(struct PipelineArray *pa)
 {
-    mesh_array_add_vertices(pa->infos[pa->count - 1].meshes, 3);
+    switch (pa->infos[pa->count-1].config.topology) {
+    case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
+        LOG(LEVEL_TRACE, "Adding line\n");
+        mesh_array_add_vertices(pa->infos[pa->count - 1].meshes, 2);
+        break;
+    case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+        LOG(LEVEL_TRACE, "Adding triangle\n");
+        mesh_array_add_vertices(pa->infos[pa->count - 1].meshes, 3);
+        break;
+    default:
+        assert(0);
+    }
 }
 
 size_t pipeline_array_mesh_count(struct PipelineArray *pa)
@@ -438,16 +448,17 @@ uint32_t pipeline_array_render(struct PipelineArray *array, VkCommandBuffer cb, 
     return vertices_drawn;
 }
 
-#define PIPELINE_CONFIG_OPTION_COUNT 10
+#define PIPELINE_CONFIG_OPTION_COUNT 11
 
 struct Pipeline *pipeline_get_for_config(struct PipelineConfig *config, VkPipelineLayout layout)
 {
     struct ConfigList {
-        uint32_t type; // 0 for VkBool32; 1 for VkCompareOp; 2 for VkBlendFactor
+        uint32_t type; // 0 - VkBool32; 1 - VkCompareOp; 2 - VkBlendFactor; 3 - VkPrimitiveTopology
         union {
             VkBool32 b;
             VkCompareOp op;
             VkBlendFactor f;
+            VkPrimitiveTopology top;
         };
     };
 
@@ -472,6 +483,8 @@ struct Pipeline *pipeline_get_for_config(struct PipelineConfig *config, VkPipeli
     list[8].b = config->colorWriteEnable;
     list[9].type = 0;
     list[9].b = config->alphaWriteEnable;
+    list[10].type = 3;
+    list[10].top = config->topology;
 
     struct PipelineNode *parent = NULL;
     struct PipelineNode *node = &PIPELINE_CACHE_ROOT;
@@ -490,6 +503,10 @@ struct Pipeline *pipeline_get_for_config(struct PipelineConfig *config, VkPipeli
         case 2:
             child_count = 11;
             index = list[i].f == VK_BLEND_FACTOR_SRC_ALPHA_SATURATE ? 10 : list[i].f;
+        break;
+        case 3:
+            child_count = 2;
+            index = list[i].top == VK_PRIMITIVE_TOPOLOGY_LINE_LIST ? 0 : 1;
         break;
         }
         if (node->children == NULL) {
@@ -521,6 +538,14 @@ struct Pipeline *pipeline_get_for_config(struct PipelineConfig *config, VkPipeli
         node->leaf->parent = parent;
         node->leaf->refCount = 0;
         assert(node->leaf != NULL);
+
+        const VkPipelineInputAssemblyStateCreateInfo assembly_state = {
+            .sType                  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            .pNext                  = NULL,
+            .flags                  = 0,
+            .topology               = config->topology,
+            .primitiveRestartEnable = VK_FALSE,
+        };
 
         VkPipelineRasterizationStateCreateInfo rasterization_state = {
             .sType                   = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
@@ -582,7 +607,7 @@ struct Pipeline *pipeline_get_for_config(struct PipelineConfig *config, VkPipeli
             .stageCount = 2,
             .pStages = SHADER_INFO,
             .pVertexInputState = &INPUT_STATE,
-            .pInputAssemblyState = &ASSEMBLY_STATE,
+            .pInputAssemblyState = &assembly_state,
             .pTessellationState = NULL,
             .pViewportState = &VIEWPORT_STATE,
             .pRasterizationState = &rasterization_state,

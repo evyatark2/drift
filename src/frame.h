@@ -23,7 +23,8 @@ void frame_lock(struct Frame *frame, void **ptr);
 void frame_unlock(struct Frame *frame);
 void frame_skip(struct Frame *frame);
 void frame_render(struct Frame *frame, struct PipelineArray *pa);
-void frame_add_vertices(struct Frame *frame, struct DrVertex *v1, struct DrVertex *v2, struct DrVertex *v3);
+void frame_add_triangle(struct Frame *frame, struct DrVertex *v1, struct DrVertex *v2, struct DrVertex *v3);
+void frame_add_line(struct Frame *frame, struct DrVertex *v1, struct DrVertex *v2);
 void frame_add_fog_table(struct Frame *frame, struct FogTable *table);
 
 int frames_init(VkPhysicalDevice physical_device, VkDevice device, size_t width, size_t height);

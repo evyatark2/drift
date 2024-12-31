@@ -32,15 +32,22 @@ enum LogLevel {
 //sprintf_s(buf + len, 4096 - len, (format), ##__VA_ARGS__);
 //OutputDebugString(buf);
 
+extern FILE *log_file;
+
 #define LOG(level, format, ...) \
     do { \
         if (level > LEVEL_TRACE) { \
-            printf("[%s] %s(): ", strlevel(level), __func__); \
-            printf((format), ##__VA_ARGS__); \
+            fprintf(log_file, "[%s] %s(): ", strlevel(level), __func__); \
+            fprintf(log_file, (format), ##__VA_ARGS__); \
         } \
     } while(0)
 
 #define LOG_CALL() LOG(LEVEL_TRACE, "Called\n")
+
+static void log_init()
+{
+    log_file = fopen("drift_log.txt", "w");
+}
 
 static inline const char *strlevel(enum LogLevel level)
 {

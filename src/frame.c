@@ -683,7 +683,7 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
     }
 }
 
-void frame_add_vertices(struct Frame *frame, struct DrVertex *v1, struct DrVertex *v2, struct DrVertex *v3)
+void frame_add_triangle(struct Frame *frame, struct DrVertex *v1, struct DrVertex *v2, struct DrVertex *v3)
 {
     if (frame->vertexCount + 3 > frame->vertexCapacity) {
         vkUnmapMemory(DEVICE, frame->vertexBufferMemory);
@@ -717,6 +717,41 @@ void frame_add_vertices(struct Frame *frame, struct DrVertex *v1, struct DrVerte
 
     frame->vertexCount += 3;
     frame->fogTableVertexCounts[frame->fogTableCount - 1] += 3;
+}
+
+void frame_add_line(struct Frame *frame, struct DrVertex *v1, struct DrVertex *v2)
+{
+    if (frame->vertexCount + 2 > frame->vertexCapacity) {
+        vkUnmapMemory(DEVICE, frame->vertexBufferMemory);
+
+        VkBuffer buf;
+        VkDeviceMemory mem;
+        vk_create_buffer_and_memory(PHYSICAL_DEVICE, DEVICE, (frame->vertexCapacity + 4096) * sizeof(struct DrVertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &buf, &mem);
+
+        void *new;
+        CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, mem, 0, frame->vertexCount * sizeof(struct DrVertex), 0, &new));
+        void *old;
+        CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, frame->vertexBufferMemory, 0, frame->vertexCount * sizeof(struct DrVertex), 0, &old));
+        memcpy(new, old, frame->vertexCount * sizeof(struct DrVertex));
+        vkUnmapMemory(DEVICE, frame->vertexBufferMemory);
+        vkUnmapMemory(DEVICE, mem);
+
+        vkDestroyBuffer(DEVICE, frame->vertexBuffer, NULL);
+        vkFreeMemory(DEVICE, frame->vertexBufferMemory, NULL);
+        frame->vertexBuffer         = buf;
+        frame->vertexBufferMemory   = mem;
+        frame->vertexCapacity += 4096;
+
+        void *mapped;
+        CHECK_VULKAN_RESULT(vkMapMemory(DEVICE, frame->vertexBufferMemory, 0, frame->vertexCapacity * sizeof(struct DrVertex), 0, &mapped));
+        frame->vertexBufferData = mapped;
+    }
+
+    frame->vertexBufferData[frame->vertexCount+0] = *v1;
+    frame->vertexBufferData[frame->vertexCount+1] = *v2;
+
+    frame->vertexCount += 2;
+    frame->fogTableVertexCounts[frame->fogTableCount - 1] += 2;
 }
 
 int frames_init(VkPhysicalDevice physical_device, VkDevice device, size_t width, size_t height)

@@ -58,7 +58,9 @@ FX_ENTRY void FX_CALL grGlideInit()
     if (INITIALIZED)
         return;
 
-    LOG(LEVEL_TRACE, "Called\n");
+    log_init();
+
+    LOG_CALL();
 
 #ifdef __linux__
     LIB = dlopen("libvulkan.so.1", RTLD_NOW);

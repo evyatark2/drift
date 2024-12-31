@@ -6,7 +6,7 @@ DEPFLAGS=-MT $@ -MMD -MP -MF $(DEPDIR)/$*.d
 
 DEPDIR=.deps
 OBJDIR=obj
-SRCS=src/buffer.c src/draw.c src/drift.c src/frame.c src/fx.c src/mesh.c src/pipeline.c src/sst.c src/tex.c src/util.c src/vulkan.c
+SRCS=src/buffer.c src/draw.c src/drift.c src/frame.c src/fx.c src/mesh.c src/pipeline.c src/sst.c src/tex.c src/util.c src/vulkan.c src/common.c
 
 OBJS=$(SRCS:src/%.c=$(OBJDIR)/%.o)
 
