@@ -121,7 +121,7 @@ layout(push_constant) uniform PCBlock {
 void main()
 {
     outColor = vec4(0, 0, 0, 1);
-    gl_FragDepth = -1.0 * gl_FragCoord.z + 1.0;
+    //gl_FragDepth = -1.0 * gl_FragCoord.z + 1.0;
     for (uint _i = 0; _i < GLIDE_NUM_TMU; _i++) {
         uint i = GLIDE_NUM_TMU - (_i + 1);
 
@@ -138,7 +138,7 @@ void main()
             size.y = 256.0 / aspect;
         }
 
-        newST = ST[i] / size / gl_FragCoord.z;
+        newST = ST[i] / size / (-gl_FragCoord.z + 1);
 
         switch (PC.tmu[i]) {
         case GR_TEXTURECOMBINE_ZERO:
@@ -403,7 +403,7 @@ void main()
                 outColor = inColor.a * PC.fog_color + (1 - inColor.a) * outColor;
             break;
             case GR_FOG_WITH_TABLE:
-                float w = log2(1 / gl_FragCoord.z) * 4;
+                float w = log2(1 / (-gl_FragCoord.z + 1)) * 4;
                 uint i = uint(w);
                 float f = (fog.table[i] / 255.0) * (1 - (w - i)) + (i < 63 ? (fog.table[i+1] / 255.0) : 1.0) * (w - i);
                 outColor = f * PC.fog_color + (1 - f) * outColor;

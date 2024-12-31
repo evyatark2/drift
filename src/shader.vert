@@ -18,7 +18,7 @@ layout(std430, set = 0, binding = 0) uniform MatrixBlock {
 
 void main()
 {
-    gl_Position = ubo.proj * vec4(coord.xy, coord.w, 1.0);
+    gl_Position = ubo.proj * vec4(coord.xy, -coord.w + 1, 1.0);
     color = rgba / 255.0;
     vec2 ST[] = { ST0, ST1, ST2 };
     for (uint i = 0; i < GLIDE_NUM_TMU; i++)
