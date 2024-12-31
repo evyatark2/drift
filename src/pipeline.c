@@ -122,21 +122,21 @@ static const VkPipelineVertexInputStateCreateInfo INPUT_STATE = {
         {
             .location = 2,
             .binding = 0,
-            .format = VK_FORMAT_R32G32_SFLOAT,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(struct DrVertex, st0),
         },
         // st1
         {
             .location = 3,
             .binding = 0,
-            .format = VK_FORMAT_R32G32_SFLOAT,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(struct DrVertex, st1),
         },
         // st2
         {
             .location = 4,
             .binding = 0,
-            .format = VK_FORMAT_R32G32_SFLOAT,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
             .offset = offsetof(struct DrVertex, st2),
         },
     },

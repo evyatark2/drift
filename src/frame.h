@@ -10,9 +10,9 @@
 struct DrVertex {
     float coord[4];
     float color[4];
-    float st0[2];
-    float st1[2];
-    float st2[2];
+    float st0[3];
+    float st1[3];
+    float st2[3];
 };
 
 struct Frame;

@@ -138,7 +138,7 @@ void main()
             size.y = 256.0 / aspect;
         }
 
-        newST = ST[i] / size / (-gl_FragCoord.z + 1);
+        newST = ST[i].yz / size / ST[i].x;
 
         switch (PC.tmu[i]) {
         case GR_TEXTURECOMBINE_ZERO:

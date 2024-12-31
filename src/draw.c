@@ -43,23 +43,23 @@ FX_ENTRY void FX_CALL grDrawTriangle(const GrVertex *v1, const GrVertex *v2, con
     struct DrVertex a = {
         .coord = { v1->x, v1->y, v1->z, v1->oow },
         .color = { v1->r, v1->g, v1->b, v1->a },
-        .st0 = { v1->tmuvtx[0].sow, v1->tmuvtx[0].tow },
-        .st1 = { v1->tmuvtx[1].sow, v1->tmuvtx[1].tow },
-        .st2 = { v1->tmuvtx[2].sow, v1->tmuvtx[2].tow },
+        .st0 = { v1->oow, v1->tmuvtx[0].sow, v1->tmuvtx[0].tow },
+        .st1 = { v1->oow, v1->tmuvtx[1].sow, v1->tmuvtx[1].tow },
+        .st2 = { v1->oow, v1->tmuvtx[2].sow, v1->tmuvtx[2].tow },
     };
     struct DrVertex b = {
         .coord = { v2->x, v2->y, v2->z, v2->oow },
         .color = { v2->r, v2->g, v2->b, v2->a },
-        .st0 = { v2->tmuvtx[0].sow, v2->tmuvtx[0].tow },
-        .st1 = { v2->tmuvtx[1].sow, v2->tmuvtx[1].tow },
-        .st2 = { v2->tmuvtx[2].sow, v2->tmuvtx[2].tow },
+        .st0 = { v2->oow, v2->tmuvtx[0].sow, v2->tmuvtx[0].tow },
+        .st1 = { v2->oow, v2->tmuvtx[1].sow, v2->tmuvtx[1].tow },
+        .st2 = { v2->oow, v2->tmuvtx[2].sow, v2->tmuvtx[2].tow },
     };
     struct DrVertex c = {
         .coord = { v3->x, v3->y, v3->z, v3->oow },
         .color = { v3->r, v3->g, v3->b, v3->a },
-        .st0 = { v3->tmuvtx[0].sow, v3->tmuvtx[0].tow },
-        .st1 = { v3->tmuvtx[1].sow, v3->tmuvtx[1].tow },
-        .st2 = { v3->tmuvtx[2].sow, v3->tmuvtx[2].tow },
+        .st0 = { v3->oow, v3->tmuvtx[0].sow, v3->tmuvtx[0].tow },
+        .st1 = { v3->oow, v3->tmuvtx[1].sow, v3->tmuvtx[1].tow },
+        .st2 = { v3->oow, v3->tmuvtx[2].sow, v3->tmuvtx[2].tow },
     };
     frame_add_triangle(frames_get_current(), &a, &b, &c);
     pipeline_array_add_primitive(PIPELINES);
@@ -90,18 +90,18 @@ FX_ENTRY void FX_CALL grDrawLine(const GrVertex* v1, const GrVertex* v2)
         frame_add_fog_table(frames_get_current(), staging_fog_table_get());
 
     struct DrVertex a = {
-        .coord = { v1->x, v1->y, v1->z, v1->oow > 1 ? 1 : v1->oow },
+        .coord = { v1->x, v1->y, v1->z, v1->oow },
         .color = { v1->r, v1->g, v1->b, v1->a },
-        .st0 = { v1->tmuvtx[0].sow, v1->tmuvtx[0].tow },
-        .st1 = { v1->tmuvtx[1].sow, v1->tmuvtx[1].tow },
-        .st2 = { v1->tmuvtx[2].sow, v1->tmuvtx[2].tow },
+        .st0 = { v1->oow, v1->tmuvtx[0].sow, v1->tmuvtx[0].tow },
+        .st1 = { v1->oow, v1->tmuvtx[1].sow, v1->tmuvtx[1].tow },
+        .st2 = { v1->oow, v1->tmuvtx[2].sow, v1->tmuvtx[2].tow },
     };
     struct DrVertex b = {
-        .coord = { v2->x, v2->y, v2->z, v2->oow > 1 ? 1 : v2->oow },
+        .coord = { v2->x, v2->y, v2->z, v2->oow },
         .color = { v2->r, v2->g, v2->b, v2->a },
-        .st0 = { v2->tmuvtx[0].sow, v2->tmuvtx[0].tow },
-        .st1 = { v2->tmuvtx[1].sow, v2->tmuvtx[1].tow },
-        .st2 = { v2->tmuvtx[2].sow, v2->tmuvtx[2].tow },
+        .st0 = { v2->oow, v2->tmuvtx[0].sow, v2->tmuvtx[0].tow },
+        .st1 = { v2->oow, v2->tmuvtx[1].sow, v2->tmuvtx[1].tow },
+        .st2 = { v2->oow, v2->tmuvtx[2].sow, v2->tmuvtx[2].tow },
     };
     frame_add_line(frames_get_current(), &a, &b);
     pipeline_array_add_primitive(PIPELINES);
