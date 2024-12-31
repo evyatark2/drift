@@ -1,6 +1,7 @@
 #include "tex.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
@@ -14,8 +15,6 @@
 
 VkBuffer TEXTURE_BUFFER[GLIDE_NUM_TMU];
 VkDeviceMemory TEXTURE_MEMORY[GLIDE_NUM_TMU];
-
-float LOD_BIASES[GLIDE_NUM_TMU];
 
 struct TransferNode {
     VkCommandBuffer cb;
@@ -51,7 +50,11 @@ struct SamplerNodeOption;
 
 union SamplerNode {
     struct SamplerNodeOption *children;
-    VkSampler sampler;
+    struct {
+        size_t count;
+        float *biases;
+        VkSampler *samplers;
+    };
 };
 
 struct SamplerNodeOption {
@@ -72,9 +75,7 @@ FX_ENTRY void FX_CALL grTexFilterMode(GrChipID_t tmu, GrTextureFilterMode_t min,
 FX_ENTRY void FX_CALL grTexLodBiasValue(GrChipID_t tmu, float value)
 {
     LOG(LEVEL_TRACE, "Setting LOD bias for TMU %d to %f\n", tmu, value);
-    if (LOD_BIASES[tmu] != value) {
-        LOD_BIASES[tmu] = value;
-    }
+    staging_mesh_set_mipmap_bias(tmu, value);
 }
 
 FX_ENTRY void FX_CALL grTexDownloadTable(GrChipID_t tmu, GrTexTable_t type, void* data)
@@ -434,7 +435,7 @@ FX_ENTRY void FX_CALL grTexMipMapMode(GrChipID_t tmu, GrMipMapMode_t mode, FxBoo
     // Vulkan doesn't support dithered mipmap so we just use linear filtering in that case
     // since it is stated in the Glide spec that it is "almost indistinguishable from trilinear filtering"
     staging_mesh_set_mipmap_enable(tmu, mode != GR_MIPMAP_DISABLE);
-    staging_mesh_set_mipmap_mode(tmu, lodBlend || mode == GR_MIPMAP_NEAREST_DITHER ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST);
+    staging_mesh_set_mipmap_mode(tmu, (lodBlend || mode == GR_MIPMAP_NEAREST_DITHER) ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST);
 }
 
 int textures_init()
@@ -907,33 +908,43 @@ VkSampler sampler_get_for_config(struct SamplerConfig *config)
         node = &node->children[index].node;
     }
 
-    if (node->sampler == VK_NULL_HANDLE) {
-        LOG(LEVEL_DEBUG, "Creating sampler\n");
-        const VkSamplerCreateInfo create_info = {
-            .sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-            .pNext                   = NULL,
-            .flags                   = 0,
-            .magFilter               = config->magFilter,
-            .minFilter               = config->minFilter,
-            .mipmapMode              = config->mipmapMode,
-            .addressModeU            = config->uAddressMode,
-            .addressModeV            = config->vAddressMode,
-            .addressModeW            = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-            .mipLodBias              = -1.0f,
-            .anisotropyEnable        = VK_FALSE,
-            //.maxAnisotropy           = ,
-            .compareEnable           = VK_FALSE,
-            //.compareOp               = ,
-            .minLod                  = 0.0f,
-            .maxLod                  = config->mipmapEnable ? VK_LOD_CLAMP_NONE : 0.0f,
-            //.borderColor             = ,
-            .unnormalizedCoordinates = VK_FALSE,
-        };
-
-        CHECK_VULKAN_RESULT(vkCreateSampler(DEVICE, &create_info, NULL, &node->sampler));
+    for (size_t i = 0; i < node->count; i++) {
+        if (node->biases[i] == config->bias)
+            return node->samplers[i];
     }
 
-    return node->sampler;
+    node->samplers = realloc(node->samplers, (node->count + 1) * sizeof(VkSampler));
+    assert(node->samplers != NULL);
+    node->biases = realloc(node->biases, (node->count + 1) * sizeof(float));
+    assert(node->biases != NULL);
+
+    LOG(LEVEL_DEBUG, "Creating sampler #%d\n", node->count);
+    const VkSamplerCreateInfo create_info = {
+        .sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext                   = NULL,
+        .flags                   = 0,
+        .magFilter               = config->magFilter,
+        .minFilter               = config->minFilter,
+        .mipmapMode              = config->mipmapMode,
+        .addressModeU            = config->uAddressMode,
+        .addressModeV            = config->vAddressMode,
+        .addressModeW            = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias              = config->bias,
+        .anisotropyEnable        = VK_FALSE,
+        //.maxAnisotropy           = ,
+        .compareEnable           = VK_FALSE,
+        //.compareOp               = ,
+        .minLod                  = 0.0f,
+        .maxLod                  = config->mipmapEnable ? VK_LOD_CLAMP_NONE : 0.0f,
+        //.borderColor             = ,
+        .unnormalizedCoordinates = VK_FALSE,
+    };
+
+    CHECK_VULKAN_RESULT(vkCreateSampler(DEVICE, &create_info, NULL, &node->samplers[node->count]));
+
+    node->biases[node->count] = config->bias;
+    node->count++;
+    return node->samplers[node->count - 1];
 }
 
 static void texture_avl_free_rec(struct TextureNode *node)

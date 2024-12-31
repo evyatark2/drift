@@ -112,6 +112,11 @@ void staging_mesh_set_mipmap_mode(uint32_t tmu, VkSamplerMipmapMode mode)
     SET_MESH_PROPERTY(samplers[tmu].mipmapMode, mode);
 }
 
+void staging_mesh_set_mipmap_bias(uint32_t tmu, float val)
+{
+    SET_MESH_PROPERTY(samplers[tmu].bias, val);
+}
+
 void staging_mesh_set_view(uint32_t tmu, VkImageView view)
 {
     SET_MESH_PROPERTY(views[tmu], view);

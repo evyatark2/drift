@@ -14,6 +14,7 @@ void staging_mesh_set_filter_mode(uint32_t tmu, VkFilter min, VkFilter max);
 void staging_mesh_set_clamp_mode(uint32_t tmu, VkSamplerAddressMode u, VkSamplerAddressMode v);
 void staging_mesh_set_mipmap_enable(uint32_t tmu, bool enable);
 void staging_mesh_set_mipmap_mode(uint32_t tmu, VkSamplerMipmapMode mode);
+void staging_mesh_set_mipmap_bias(uint32_t tmu, float val);
 void staging_mesh_set_view(uint32_t tmu, VkImageView view);
 void staging_mesh_set_combine_function(uint32_t tmu, uint8_t fnc);
 void staging_mesh_set_color_combine(uint8_t function, uint8_t factor, uint8_t local, uint8_t other);

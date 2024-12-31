@@ -14,6 +14,7 @@ struct SamplerConfig {
     VkSamplerMipmapMode mipmapMode;
     VkSamplerAddressMode uAddressMode;
     VkSamplerAddressMode vAddressMode;
+    float bias;
 };
 
 //struct SamplerConfig;
