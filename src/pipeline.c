@@ -408,14 +408,19 @@ size_t pipeline_array_mesh_count(struct PipelineArray *pa)
 uint32_t pipeline_array_get_descriptor_writes(struct PipelineArray *pa, VkDescriptorSet *sets, VkWriteDescriptorSet *writes, VkDescriptorImageInfo *image_infos)
 {
     uint32_t current_mesh = 0;
-    uint32_t count = 0;
+    size_t write_count = 0;
+    size_t info_count = 0;
     for (size_t i = 0; i < pa->count; i++) {
         struct PipelineInfo *pipeline = pa->infos + i;
-        count += mesh_array_get_descriptor_writes(pipeline->meshes, &sets[current_mesh], &writes[count], &image_infos[count]);
+        size_t current_write_count = 0;
+        size_t current_info_count = 0;
+        mesh_array_get_descriptor_writes(pipeline->meshes, &sets[current_mesh], &current_write_count, &writes[write_count], &current_info_count, &image_infos[info_count]);
+        write_count += current_write_count;
+        info_count += current_info_count;
         current_mesh += mesh_array_size(pipeline->meshes);
     }
 
-    return count;
+    return write_count;
 }
 
 uint32_t pipeline_array_render(struct PipelineArray *array, VkCommandBuffer cb, VkPipelineLayout layout, struct Pipeline **pipelines, uint32_t vertex_count, uint32_t vertex_offset, VkDescriptorSet *sets)

@@ -466,7 +466,7 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
             free(layouts);
         }
 
-        struct Pipeline **pipelines = frame->pipelines;
+        struct Pipeline **old_pipelines = frame->pipelines;
         frame->pipelines = malloc(pipeline_array_size(pa) * sizeof(struct Pipeline *));
         assert(frame->pipelines != NULL);
 
@@ -478,9 +478,9 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
             frame->pipelines[i] = pipeline_get_for_config(configs[i], FRAMES.pipelineLayout);
 
         for (size_t i = 0; i < frame->pipelineCount; i++) {
-            pipeline_unref(pipelines[i]);
+            pipeline_unref(old_pipelines[i]);
         }
-        free(pipelines);
+        free(old_pipelines);
 
         frame->pipelineCount = pipeline_array_size(pa);
 

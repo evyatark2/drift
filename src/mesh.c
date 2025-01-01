@@ -250,31 +250,37 @@ void mesh_array_add_vertices(struct MeshArray *array, size_t count)
     array->meshes[array->count - 1].vertexCount += count;
 }
 
-uint32_t mesh_array_get_descriptor_writes(struct MeshArray *array, VkDescriptorSet *sets, VkWriteDescriptorSet *writes, VkDescriptorImageInfo *image_infos)
+void mesh_array_get_descriptor_writes(struct MeshArray *array, VkDescriptorSet *sets, size_t *write_count, VkWriteDescriptorSet *writes, size_t *info_count, VkDescriptorImageInfo *image_infos)
 {
-    uint32_t count = 0;
     for (size_t i = 0; i < array->count; i++) {
         struct Mesh *mesh = array->meshes + i;
 
-        for (uint32_t j = 0; j < GLIDE_NUM_TMU; j++) {
+        size_t prev = -1;
+        for (size_t j = 0; j < GLIDE_NUM_TMU; j++) {
             if (mesh->info.views[j] != VK_NULL_HANDLE) {
-                image_infos[count].sampler = mesh->samplers[j];
-                image_infos[count].imageView = mesh->info.views[j];
-                image_infos[count].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                writes[count].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[count].pNext            = NULL;
-                writes[count].dstSet           = sets[i];
-                writes[count].dstBinding       = 0;
-                writes[count].dstArrayElement  = j;
-                writes[count].descriptorCount  = 1;
-                writes[count].descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[count].pImageInfo       = &image_infos[count];
-                count++;
+                image_infos[*info_count].sampler = mesh->samplers[j];
+                image_infos[*info_count].imageView = mesh->info.views[j];
+                image_infos[*info_count].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                if (prev != -1) {
+                    writes[prev].descriptorCount++;
+                } else {
+                    writes[*write_count].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    writes[*write_count].pNext            = NULL;
+                    writes[*write_count].dstSet           = sets[i];
+                    writes[*write_count].dstBinding       = 0;
+                    writes[*write_count].dstArrayElement  = j;
+                    writes[*write_count].descriptorCount  = 1;
+                    writes[*write_count].descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                    writes[*write_count].pImageInfo       = &image_infos[*info_count];
+                    prev = *write_count;
+                    (*write_count)++;
+                }
+                (*info_count)++;
+            } else {
+                prev = -1;
             }
         }
     }
-
-    return count;
 }
 
 uint32_t mesh_array_render(struct MeshArray *array, VkCommandBuffer cb, VkPipelineLayout layout, VkDescriptorSet *sets, uint32_t vertex_count, uint32_t vertex_offset, uint32_t base_offset)
