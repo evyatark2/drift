@@ -12,6 +12,7 @@
 #include "glide.h"
 
 #include "common.h"
+#include "vulkan.h"
 #include "drift.h"
 #include "frame.h"
 #include "buffer.h"

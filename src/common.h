@@ -37,7 +37,7 @@ extern FILE *log_file;
 #define LOG(level, format, ...) \
     do { \
         if (level > LEVEL_TRACE) { \
-            fprintf(log_file, "[%s] %s(): ", strlevel(level), __func__); \
+            fprintf(log_file, "[%s] %s:%d(): ", strlevel(level), __func__, __LINE__); \
             fprintf(log_file, (format), ##__VA_ARGS__); \
         } \
     } while(0)
