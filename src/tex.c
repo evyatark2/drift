@@ -340,7 +340,7 @@ FX_ENTRY void FX_CALL grTexDownloadMipMap(GrChipID_t tmu, FxU32 start_address, F
     };
 
     struct TransferNode *node = get_cb();
-    vkCreateBuffer(DEVICE, &create_info, NULL, &node->buf);
+    CHECK_VULKAN_RESULT(vkCreateBuffer(DEVICE, &create_info, NULL, &node->buf));
 
     VkMemoryRequirements reqs;
     vkGetBufferMemoryRequirements(DEVICE, node->buf, &reqs);
@@ -361,7 +361,7 @@ FX_ENTRY void FX_CALL grTexDownloadMipMap(GrChipID_t tmu, FxU32 start_address, F
         .allocationSize  = reqs.size,
         .memoryTypeIndex = i,
     };
-    vkAllocateMemory(DEVICE, &allocate_info, NULL, &node->mem);
+    CHECK_VULKAN_RESULT(vkAllocateMemory(DEVICE, &allocate_info, NULL, &node->mem));
 
     vkBindBufferMemory(DEVICE, node->buf, node->mem, 0);
 
@@ -405,7 +405,7 @@ FX_ENTRY void FX_CALL grTexDownloadMipMap(GrChipID_t tmu, FxU32 start_address, F
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1, &barrier, 0, NULL);
 
-    vkEndCommandBuffer(cb);
+    CHECK_VULKAN_RESULT(vkEndCommandBuffer(cb));
 
     VkSubmitInfo submit_info = {
         .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -590,7 +590,8 @@ static struct TransferNode *get_cb()
         node->buf = VK_NULL_HANDLE;
         vkFreeMemory(DEVICE, node->mem, NULL);
         node->mem = VK_NULL_HANDLE;
-        vkResetFences(DEVICE, 1, &node->fence);
+        CHECK_VULKAN_RESULT(vkResetFences(DEVICE, 1, &node->fence));
+        CHECK_VULKAN_RESULT(vkResetCommandBuffer(node->cb, 0));
         CB_RING.start++;
         CB_RING.start %= CB_RING.capacity;
         CB_RING.len--;
