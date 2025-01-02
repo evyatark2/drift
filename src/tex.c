@@ -3,7 +3,6 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vulkan/vulkan_core.h>
 
 #include "mesh.h"
 #include "common.h"

@@ -80,6 +80,7 @@ FX_ENTRY void FX_CALL grGlideInit()
     assert(func != NULL);
 
 #include "vulkan-functions.inl"
+
 #endif
 
 #define VK_GLOBAL_FUNCTION(func) \
@@ -115,21 +116,23 @@ FX_ENTRY void FX_CALL grGlideInit()
         .pUserData       = NULL,
     };
 
-    const VkLayerSettingEXT layer_settings[] = {
-        { "VK_LAYER_KHRONOS_validation", "validate_core", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &(VkBool32) { VK_TRUE } },
-        { "VK_LAYER_KHRONOS_validation", "validate_sync", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &(VkBool32) { VK_TRUE } },
-    };
+    //const VkValidationFeatureDisableEXT disables[] = { VK_VALIDATION_FEATURE_DISABLE_CORE_CHECKS_EXT };
+    //const VkValidationFeatureEnableEXT enables[] = { VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT, VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT };
 
-    const VkLayerSettingsCreateInfoEXT layer_settings_create_info = {
-        .sType        = VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT,
-        .pNext        = &messenger_info,
-        .settingCount = sizeof(layer_settings) / sizeof(layer_settings[0]),
-        .pSettings    = layer_settings,
+    const VkValidationFeatureDisableEXT disables[] = { };
+    const VkValidationFeatureEnableEXT enables[] = { VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT };
+    const VkValidationFeaturesEXT features = {
+        .sType =VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
+        .pNext = &messenger_info,
+        .enabledValidationFeatureCount = sizeof(enables) / sizeof(enables[0]),
+        .pEnabledValidationFeatures = enables,
+        .disabledValidationFeatureCount = sizeof(disables) / sizeof(disables[0]),
+        .pDisabledValidationFeatures = disables
     };
 
     const VkInstanceCreateInfo create_info = {
         .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pNext                   = &layer_settings_create_info,
+        .pNext                   = &features,
         //.pNext                   = NULL,
         .flags                   = 0,
         .pApplicationInfo        = &app_info,
