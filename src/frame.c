@@ -261,6 +261,10 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
             };
             vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
 
+            barrier.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.image               = LAST_FRAME;
+            vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
             CHECK_VULKAN_RESULT(vkEndCommandBuffer(frame->cb));
 
             VkSubmitInfo submit_info = {
@@ -607,7 +611,7 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
         vkCmdPipelineBarrier(frame->cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &im_barrier);
 
         im_barrier.image = SWAPCHAIN_IMAGES[CURRENT_BACKBUFFER];
-        im_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        im_barrier.srcAccessMask = 0;
         im_barrier.dstAccessMask = 0;
         im_barrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         im_barrier.newLayout     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;

@@ -88,6 +88,8 @@ FX_ENTRY void FX_CALL grTexSource(GrChipID_t tmu, FxU32 start_address, FxU32 eve
     LOG(LEVEL_TRACE, "Called on %d:0x%x\n", tmu, start_address);
 
     if (SHOULD_RESET[tmu]) {
+        // Nasty hack so images won't get destroyed while still in use
+        vkDeviceWaitIdle(DEVICE);
         texture_avl_free(&TEXTURES[tmu]);
         SHOULD_RESET[tmu] = false;
     }

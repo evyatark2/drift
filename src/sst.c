@@ -1075,6 +1075,11 @@ FX_ENTRY FxBool FX_CALL grSstWinOpen(FxU32 hWnd, GrScreenResolution_t screen_res
     pipeline_array_init(PIPELINES);
     textures_init();
 
+    // HACK
+    frame_render(frames_get_current(), PIPELINES);
+    frame_present(frames_get_current());
+    frames_advance();
+
     HAS_WINDOW = true;
     return FXTRUE;
 }
