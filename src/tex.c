@@ -15,6 +15,29 @@
 VkBuffer TEXTURE_BUFFER[GLIDE_NUM_TMU];
 VkDeviceMemory TEXTURE_MEMORY[GLIDE_NUM_TMU];
 
+struct TextureNodeKey {
+    uint32_t address;
+    uint8_t even_odd;
+    uint8_t tiny;
+    uint8_t large;
+    uint8_t aspect;
+    uint8_t format;
+};
+
+struct TextureNode {
+    struct TextureNode *parent;
+    struct TextureNode *left;
+    struct TextureNode *right;
+    struct TextureNodeKey key;
+    size_t height;
+    size_t high;
+    size_t refs;
+    bool invalid;
+    VkImage image;
+    VkDeviceMemory memory;
+    VkImageView view;
+};
+
 struct TransferNode {
     VkCommandBuffer cb;
     VkFence fence;
