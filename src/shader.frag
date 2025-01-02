@@ -67,7 +67,7 @@
 layout(constant_id = 0) const uint GLIDE_NUM_TMU = 3;
 
 layout(location = 0) in vec4 inColor;
-layout(location = 1) in vec2 ST[GLIDE_NUM_TMU];
+layout(location = 1) in vec3 ST[GLIDE_NUM_TMU];
 
 layout(location = 0) out vec4 outColor;
 
@@ -122,54 +122,56 @@ void main()
 {
     outColor = vec4(0, 0, 0, 1);
     //gl_FragDepth = -1.0 * gl_FragCoord.z + 1.0;
-    for (uint _i = 0; _i < GLIDE_NUM_TMU; _i++) {
-        uint i = GLIDE_NUM_TMU - (_i + 1);
+    if (PC.ccombine_other == GR_COMBINE_OTHER_TEXTURE || PC.acombine_other == GR_COMBINE_OTHER_TEXTURE) {
+        for (uint _i = 0; _i < GLIDE_NUM_TMU; _i++) {
+            uint i = GLIDE_NUM_TMU - (_i + 1);
 
-        vec2 newST;
-        ivec2 _size = textureSize(images[i], 0);
-        vec2 size = vec2(float(_size.x), float(_size.y));
-        if (size.x < size.y) {
-            float aspect = size.y / size.x;
-            size.y = 256.0;
-            size.x = 256.0 / aspect;
-        } else {
-            float aspect = size.x / size.y;
-            size.x = 256.0;
-            size.y = 256.0 / aspect;
-        }
+            vec2 newST;
+            ivec2 _size = textureSize(images[i], 0);
+            vec2 size = vec2(float(_size.x), float(_size.y));
+            if (size.x < size.y) {
+                float aspect = size.y / size.x;
+                size.y = 256.0;
+                size.x = 256.0 / aspect;
+            } else {
+                float aspect = size.x / size.y;
+                size.x = 256.0;
+                size.y = 256.0 / aspect;
+            }
 
-        newST = ST[i].yz / size / ST[i].x;
+            newST = ST[i].yz / size / ST[i].x;
 
-        switch (PC.tmu[i]) {
-        case GR_TEXTURECOMBINE_ZERO:
-            outColor = vec4(vec3(0.0), 1.0);
-            break;
-        case GR_TEXTURECOMBINE_DECAL:
-            outColor = texture(images[i], newST);
-            break;
-        case GR_TEXTURECOMBINE_OTHER:
-            /* empty */
-            break;
-        case GR_TEXTURECOMBINE_ADD:
-            outColor = outColor + texture(images[i], newST);
-            break;
-        case GR_TEXTURECOMBINE_MULTIPLY:
-            outColor = outColor * texture(images[i], newST);
-            break;
-        case GR_TEXTURECOMBINE_SUBTRACT:
-            outColor = outColor - texture(images[i], newST);
-            break;
-        case GR_TEXTURECOMBINE_DETAIL:
-            break;
-        case GR_TEXTURECOMBINE_DETAIL_OTHER:
-            break;
-        case GR_TEXTURECOMBINE_TRILINEAR_ODD:
-            break;
-        case GR_TEXTURECOMBINE_TRILINEAR_EVEN:
-            break;
-        case GR_TEXTURECOMBINE_ONE:
-            outColor = vec4(1.0);
-            break;
+            switch (PC.tmu[i]) {
+            case GR_TEXTURECOMBINE_ZERO:
+                outColor = vec4(vec3(0.0), 1.0);
+                break;
+            case GR_TEXTURECOMBINE_DECAL:
+                outColor = texture(images[i], newST);
+                break;
+            case GR_TEXTURECOMBINE_OTHER:
+                /* empty */
+                break;
+            case GR_TEXTURECOMBINE_ADD:
+                outColor = outColor + texture(images[i], newST);
+                break;
+            case GR_TEXTURECOMBINE_MULTIPLY:
+                outColor = outColor * texture(images[i], newST);
+                break;
+            case GR_TEXTURECOMBINE_SUBTRACT:
+                outColor = outColor - texture(images[i], newST);
+                break;
+            case GR_TEXTURECOMBINE_DETAIL:
+                break;
+            case GR_TEXTURECOMBINE_DETAIL_OTHER:
+                break;
+            case GR_TEXTURECOMBINE_TRILINEAR_ODD:
+                break;
+            case GR_TEXTURECOMBINE_TRILINEAR_EVEN:
+                break;
+            case GR_TEXTURECOMBINE_ONE:
+                outColor = vec4(1.0);
+                break;
+            }
         }
     }
 
@@ -405,7 +407,7 @@ void main()
             case GR_FOG_WITH_TABLE:
                 float w = log2(1 / (-gl_FragCoord.z + 1)) * 4;
                 uint i = uint(w);
-                float f = (fog.table[i] / 255.0) * (1 - (w - i)) + (i < 63 ? (fog.table[i+1] / 255.0) : 1.0) * (w - i);
+                float f = (i < 64 ? fog.table[i] / 255.0 : 1.0) * (1 - (w - i)) + (i < 63 ? (fog.table[i+1] / 255.0) : 1.0) * (w - i);
                 outColor = f * PC.fog_color + (1 - f) * outColor;
             break;
             case GR_FOG_WITH_ITERATED_Z:
