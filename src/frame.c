@@ -512,10 +512,19 @@ void frame_render(struct Frame *frame, struct PipelineArray *pa)
 
         if (DRIFT_CONFIG.force_aa) {
             if (USE_TRIPLE_BUFFERING) {
-                clears[1].color = CLEAR_COLOR_VALUE;
+                if (DRIFT_CONFIG.enable_pp) {
+                    clears[0].color = CLEAR_COLOR_VALUE;
+                } else {
+                    clears[1].color = CLEAR_COLOR_VALUE;
+                }
             } else {
-                clears[0].depthStencil = CLEAR_DEPTH_VALUE;
-                clears[2].color = CLEAR_COLOR_VALUE;
+                if (DRIFT_CONFIG.enable_pp) {
+                    clears[0].depthStencil = CLEAR_DEPTH_VALUE;
+                    clears[1].color = CLEAR_COLOR_VALUE;
+                } else {
+                    clears[0].depthStencil = CLEAR_DEPTH_VALUE;
+                    clears[2].color = CLEAR_COLOR_VALUE;
+                }
             }
         } else {
             if (USE_TRIPLE_BUFFERING) {
